@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Codex Helper · 设置 API Key</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: #f4f6fb;
+      color: #1e293b;
+      padding: 28px 32px 24px;
+      min-height: 100vh;
+    }
+    h1 { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
+    .sub { color: #64748b; font-size: 13px; margin-bottom: 22px; line-height: 1.5; }
+    label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #334155; }
+    select, input[type="password"], input[type="text"] {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font-size: 14px;
+      background: #fff;
+      margin-bottom: 16px;
+    }
+    select:focus, input:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    }
+    .hint {
+      font-size: 12px;
+      color: #64748b;
+      margin: -10px 0 16px;
+    }
+    .hint a { color: #2563eb; text-decoration: none; }
+    .hint a:hover { text-decoration: underline; }
+    .status {
+      min-height: 40px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .status.ok { display: block; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    .status.err { display: block; background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+    .status.info { display: block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+    .actions { display: flex; gap: 10px; }
+    button {
+      flex: 1;
+      padding: 11px 16px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #testBtn { background: #fff; color: #334155; border: 1px solid #cbd5e1; }
+    #testBtn:hover { background: #f8fafc; }
+    #saveBtn { background: #2563eb; color: #fff; }
+    #saveBtn:hover { background: #1d4ed8; }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #e2e8f0;
+      color: #475569;
+      margin-left: 6px;
+      font-weight: 500;
+    }
+    .badge.ok { background: #d1fae5; color: #047857; }
+  </style>
+</head>
+<body>
+  <h1>设置</h1>
+  <p class="sub">选择厂商和模型版本，粘贴 Key 后保存。Codex 里可直接切换具体型号。</p>
+
+  <label for="provider">厂商</label>
+  <select id="provider"></select>
+
+  <label for="model">热门模型</label>
+  <select id="model"></select>
+  <p class="hint" id="contextHint"></p>
+  <label for="apiKey">API Key <span id="keyBadge" class="badge">未配置</span></label>
+  <input id="apiKey" type="password" placeholder="粘贴 sk- 开头的 Key" autocomplete="off" />
+  <p class="hint">还没有 Key？<a id="signupLink" href="#" target="_blank">点此去官网申请</a></p>
+
+  <div id="status" class="status"></div>
+
+  <div class="actions">
+    <button type="button" id="testBtn">测试连接</button>
+    <button type="button" id="saveBtn">保存</button>
+  </div>
+
+  <script>
+    let providers = [];
+
+    function showStatus(text, kind) {
+      const el = document.getElementById('status');
+      el.textContent = text;
+      el.className = 'status ' + kind;
+    }
+
+    function selected() {
+      return providers.find(p => p.id === document.getElementById('provider').value);
+    }
+
+    function updateSignupLink() {
+      const p = selected();
+      const link = document.getElementById('signupLink');
+      if (p && p.signup_url) {
+        link.href = p.signup_url;
+        link.textContent = '点此去 ' + p.name + ' 官网申请 Key';
+      }
+    }
+
+    function updateKeyBadge(configured) {
+      const badge = document.getElementById('keyBadge');
+      if (configured) {
+        badge.textContent = '已配置';
+        badge.className = 'badge ok';
+      } else {
+        badge.textContent = '未配置';
+        badge.className = 'badge';
+      }
+    }
+
+    function maskKey(key) {
+      if (key.length <= 8) return '***';
+      return key.slice(0, 4) + '...' + key.slice(-4);
+    }
+
+    function refreshModelOptions() {
+      const p = selected();
+      const sel = document.getElementById('model');
+      sel.innerHTML = '';
+      if (!p || !p.models) return;
+      p.models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.slug;
+        opt.textContent = m.name + ' · ' + m.context;
+        sel.appendChild(opt);
+      });
+      if (p.current_model) sel.value = p.current_model;
+      updateContextHint();
+    }
+
+    function updateContextHint() {
+      const p = selected();
+      const slug = document.getElementById('model').value;
+      const model = p?.models?.find(m => m.slug === slug);
+      const hint = document.getElementById('contextHint');
+      hint.textContent = model
+        ? `上下文窗口：${model.context} · Codex 中显示为 ${slug}`
+        : '';
+    }
+
+    function refreshKeyField(clearInput) {
+      const p = selected();
+      const input = document.getElementById('apiKey');
+      if (clearInput) input.value = '';
+      if (p && p.key_preview) {
+        input.placeholder = `已保存 ${p.key_preview}，粘贴新 Key 可覆盖`;
+      } else {
+        input.placeholder = '粘贴 sk- 开头的 Key';
+      }
+    }
+
+    function fillProviders(list, active) {
+      providers = list;
+      const sel = document.getElementById('provider');
+      sel.innerHTML = '';
+      list.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.name + (p.id === active ? '（当前）' : '');
+        sel.appendChild(opt);
+      });
+      if (active) sel.value = active;
+      updateSignupLink();
+      updateKeyBadge(selected()?.key_configured);
+      refreshModelOptions();
+      refreshKeyField(false);
+    }
+
+    document.getElementById('provider').addEventListener('change', () => {
+      updateSignupLink();
+      updateKeyBadge(selected()?.key_configured);
+      refreshModelOptions();
+      refreshKeyField(true);
+    });
+
+    document.getElementById('model').addEventListener('change', updateContextHint);
+
+    async function api(path, body) {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body || {}),
+      });
+      return res.json();
+    }
+
+    document.getElementById('testBtn').addEventListener('click', async () => {
+      const p = selected();
+      const key = document.getElementById('apiKey').value.trim();
+      if (!key && !p.key_configured) {
+        showStatus('请先粘贴 API Key', 'err');
+        return;
+      }
+      showStatus('正在测试连接…', 'info');
+      document.getElementById('testBtn').disabled = true;
+      try {
+        const data = await api('/admin/settings/test', {
+          provider_id: p.id,
+          api_key: key,
+          model_slug: document.getElementById('model').value,
+        });
+        showStatus(data.message || (data.ok ? '连接成功' : '连接失败'), data.ok ? 'ok' : 'err');
+      } catch (e) {
+        showStatus('测试失败：' + e.message, 'err');
+      } finally {
+        document.getElementById('testBtn').disabled = false;
+      }
+    });
+
+    document.getElementById('saveBtn').addEventListener('click', async () => {
+      const p = selected();
+      const key = document.getElementById('apiKey').value.trim();
+      const modelSlug = document.getElementById('model').value;
+      if (!key && !p.key_configured) {
+        showStatus('请先粘贴 API Key', 'err');
+        return;
+      }
+      if (p.id === 'deepseek' && key && !key.startsWith('sk-')) {
+        showStatus('DeepSeek Key 通常以 sk- 开头，请检查是否复制完整', 'err');
+        return;
+      }
+      showStatus('正在保存…', 'info');
+      document.getElementById('saveBtn').disabled = true;
+      try {
+        const data = await api('/admin/settings/save', {
+          provider_id: p.id,
+          api_key: key,
+          model_slug: modelSlug,
+        });
+        if (data.ok) {
+          showStatus(data.message || '已保存！请完全退出并重新打开 Codex Desktop。', 'ok');
+          const p = selected();
+          if (p) {
+            p.current_model = modelSlug;
+            if (key) {
+              p.key_configured = true;
+              p.key_preview = maskKey(key);
+            }
+          }
+          updateKeyBadge(true);
+        } else {
+          showStatus(data.message || '保存失败', 'err');
+        }
+      } catch (e) {
+        showStatus('保存失败：' + e.message, 'err');
+      } finally {
+        document.getElementById('saveBtn').disabled = false;
+      }
+    });
+
+    fetch('/admin/settings/bootstrap')
+      .then(r => r.json())
+      .then(data => fillProviders(data.providers || [], data.active))
+      .catch(e => showStatus('加载失败：' + e.message, 'err'));
+  </script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+Codex Helper — 让 Codex 使用 DeepSeek / 千问 / 智谱 / Kimi / MiniMax
+
+【环境要求】
+  · Windows 10 / 11（64 位）
+  · 已安装 OpenAI Codex Desktop，并能正常登录
+  · 各模型厂商的 API Key（DeepSeek、千问等官网申请）
+
+【绿色版 · 首次使用】
+  1. 解压本 zip 到任意目录（路径尽量不要含中文空格）
+  2. 打开 PowerShell，进入该目录，执行：
+       .\codex-helper.exe init
+       .\codex-helper.exe start
+  3. 看任务栏托盘出现 Codex Helper 图标
+  4. 右键托盘 →「设置…」→ 选厂商、填 API Key → 保存
+  5. 完全退出并重新打开 Codex Desktop
+
+【日常使用】
+  · 切换厂商：托盘 →「切换模型 · xxx」
+  · 切换具体型号：托盘 →「设置…」→ 热门模型
+  · 诊断问题：.\codex-helper.exe doctor
+  · 恢复 OpenAI 官方：托盘 → 更多 →「切换回 OpenAI 官方」
+
+【开机自启（可选）】
+  Win+R 输入 shell:startup，把 codex-helper.exe 的快捷方式放进去，
+  目标加上参数：start
+
+【配置位置】
+  · %USERPROFILE%\.codex-helper\     本工具配置与 Key
+  · %USERPROFILE%\.codex\            Codex 配置（工具会自动写入代理）
+
+【卸载绿色版】
+  托盘 → 退出；删除解压目录即可。配置在 .codex-helper 里，需手动删。
+
+版本见压缩包文件名。MIT 协议，非 OpenAI / DeepSeek 官方产品。

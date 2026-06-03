@@ -1,0 +1,37 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Build & release artifacts
+/dist/
+*.exe
+*.pdb
+*.dll
+*.msi
+
+# Local config & secrets (never commit API keys)
+/.codex-helper/
+.env
+.env.*
+*.local.json
+secrets.json
+
+# Reverse-engineering / scratch (Codex asar dumps, probes)
+/tmp/
+
+# IDE & OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+
+# WebView2 / installer cache
+*.cab
+Output/
