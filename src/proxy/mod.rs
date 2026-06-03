@@ -16,6 +16,8 @@ use tracing::{info, warn};
 use crate::config::{self, AppConfig};
 
 mod codex_compat;
+mod responses_to_chat;
+use responses_to_chat::convert_responses_to_chat;
 use crate::settings::{settings_bootstrap, settings_page, settings_save, settings_test};
 
 #[derive(Clone)]
@@ -481,87 +483,6 @@ fn unix_timestamp_now() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
-}
-
-fn convert_responses_to_chat(body: &axum::body::Bytes) -> anyhow::Result<Vec<u8>> {
-    let value: serde_json::Value = serde_json::from_slice(body)?;
-    let model = value
-        .get("model")
-        .and_then(|v| v.as_str())
-        .unwrap_or("deepseek-v4-flash")
-        .to_string();
-    let stream = value.get("stream").and_then(|v| v.as_bool()).unwrap_or(false);
-
-    // Codex Desktop 可能已在 body 里带 messages（含 developer 角色）
-    if let Some(existing) = value.get("messages").and_then(|m| m.as_array()) {
-        if !existing.is_empty() {
-            let mut chat = serde_json::json!({
-                "model": model,
-                "messages": existing.clone(),
-                "stream": stream,
-            });
-            normalize_messages_for_upstream(&mut chat);
-            return Ok(serde_json::to_vec(&chat)?);
-        }
-    }
-
-    let mut messages = Vec::new();
-
-    if let Some(input) = value.get("input") {
-        match input {
-            serde_json::Value::String(text) => {
-                messages.push(serde_json::json!({
-                    "role": "user",
-                    "content": text
-                }));
-            }
-            serde_json::Value::Array(items) => {
-                for item in items {
-                    if let Some(text) = item.as_str() {
-                        messages.push(serde_json::json!({
-                            "role": "user",
-                            "content": text
-                        }));
-                    } else if let Some(obj) = item.as_object() {
-                        let role = obj
-                            .get("role")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("user");
-                        let content = obj
-                            .get("content")
-                            .map(normalize_content_for_upstream)
-                            .unwrap_or(serde_json::Value::Null);
-                        messages.push(serde_json::json!({
-                            "role": map_role_for_upstream(role),
-                            "content": content
-                        }));
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    if messages.is_empty() {
-        if let Some(instructions) = value.get("instructions").and_then(|v| v.as_str()) {
-            messages.push(serde_json::json!({
-                "role": "system",
-                "content": instructions
-            }));
-        }
-    }
-
-    if messages.is_empty() {
-        anyhow::bail!("无法从 Responses 请求中提取 input/instructions");
-    }
-
-    let mut chat = serde_json::json!({
-        "model": model,
-        "messages": messages,
-        "stream": stream
-    });
-    normalize_messages_for_upstream(&mut chat);
-    Ok(serde_json::to_vec(&chat)?)
 }
 
 #[cfg(test)]

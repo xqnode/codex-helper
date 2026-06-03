@@ -220,10 +220,9 @@ fn render_codex_config(app: &AppConfig, provider: &config::ProviderConfig) -> an
         "model_reasoning_effort".into(),
         toml::Value::String("high".into()),
     );
-    merged.insert(
-        "disable_response_storage".into(),
-        toml::Value::Boolean(true),
-    );
+    // 勿开启 disable_response_storage：Codex Desktop 仍依赖 sessions/*.jsonl，
+    // 开启后新建对话可能无法生成 rollout 文件，导致「恢复对话失败 / Error submitting message」。
+    merged.remove("disable_response_storage");
 
     // 勿写入 sandbox_mode / windows.sandbox / approval_policy：
     // Codex Desktop 会因此出现「自定义 (config.toml)」权限项。

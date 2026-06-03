@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use rusqlite::{params, Connection, OpenFlags};
 
@@ -6,6 +6,7 @@ use crate::config::{CC_SWITCH_CODEX_PROVIDER_ID, ProviderConfig};
 use crate::paths;
 
 /// 将 Desktop 会话库里残留的 model_provider 同步为当前 config（避免 UI 仍显示旧状态）。
+/// 仅更新 rollout 文件仍存在的线程，避免指向已损坏/未创建的会话路径。
 pub fn sync_threads_to_config(provider: &ProviderConfig) -> anyhow::Result<usize> {
     let target_provider = CC_SWITCH_CODEX_PROVIDER_ID;
     let target_model = provider.default_model.clone();
@@ -41,10 +42,43 @@ fn sync_one_db(path: &PathBuf, provider: &str, model: &str) -> anyhow::Result<us
         Err(_) => return Ok(0),
     };
 
-    let changed = conn.execute(
-        "UPDATE threads SET model_provider = ?1, model = ?2
+    let mut stmt = conn.prepare(
+        "SELECT id, rollout_path FROM threads
          WHERE model_provider IS NOT ?1 OR model IS NOT ?2",
-        params![provider, model],
     )?;
+    let rows: Vec<(String, String)> = stmt
+        .query_map(params![provider, model], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let mut changed = 0usize;
+    for (id, rollout_path) in rows {
+        if !rollout_file_exists(&rollout_path) {
+            tracing::warn!(
+                "跳过损坏会话 {id}：rollout 文件不存在 ({rollout_path})"
+            );
+            continue;
+        }
+        changed += conn.execute(
+            "UPDATE threads SET model_provider = ?1, model = ?2 WHERE id = ?3",
+            params![provider, model, id],
+        )?;
+    }
     Ok(changed)
+}
+
+fn rollout_file_exists(path: &str) -> bool {
+    Path::new(path).is_file()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rollout_file_exists_checks_file_only() {
+        assert!(!rollout_file_exists(r"C:\missing\rollout.jsonl"));
+    }
 }

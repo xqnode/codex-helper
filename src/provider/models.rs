@@ -4,6 +4,8 @@ pub struct ModelVariant {
     pub display_name: &'static str,
     pub api_model: &'static str,
     pub context_window: u32,
+    /// 托盘菜单简称，如 flash / pro
+    pub menu_tag: &'static str,
 }
 
 pub fn popular_models(provider_id: &str) -> &'static [ModelVariant] {
@@ -23,18 +25,25 @@ pub fn find_model(provider_id: &str, slug: &str) -> Option<&'static ModelVariant
         .find(|m| m.slug == slug)
 }
 
+/// 托盘菜单用的型号简称（如 flash、pro）。
+pub fn menu_tag(provider: &crate::config::ProviderConfig) -> Option<&'static str> {
+    find_model(&provider.id, &provider.default_model).map(|m| m.menu_tag)
+}
+
 const DEEPSEEK_MODELS: &[ModelVariant] = &[
     ModelVariant {
         slug: "deepseek-v4-flash",
         display_name: "DeepSeek V4 Flash（推荐）",
         api_model: "deepseek-v4-flash",
         context_window: 1_000_000,
+        menu_tag: "flash",
     },
     ModelVariant {
         slug: "deepseek-v4-pro",
         display_name: "DeepSeek V4 Pro 推理",
         api_model: "deepseek-v4-pro",
         context_window: 1_000_000,
+        menu_tag: "pro",
     },
 ];
 
@@ -44,12 +53,14 @@ const QWEN_MODELS: &[ModelVariant] = &[
         display_name: "千问 3.7 Max（旗舰）",
         api_model: "qwen3.7-max",
         context_window: 256_000,
+        menu_tag: "max",
     },
     ModelVariant {
         slug: "qwen3.7-plus",
         display_name: "千问 3.7 Plus（推荐·1M）",
         api_model: "qwen3.7-plus",
         context_window: 1_000_000,
+        menu_tag: "plus",
     },
 ];
 
@@ -59,12 +70,14 @@ const ZHIPU_MODELS: &[ModelVariant] = &[
         display_name: "GLM-5（旗舰）",
         api_model: "glm-5",
         context_window: 200_000,
+        menu_tag: "glm-5",
     },
     ModelVariant {
         slug: "glm-4.7",
         display_name: "GLM-4.7",
         api_model: "glm-4.7",
         context_window: 200_000,
+        menu_tag: "4.7",
     },
 ];
 
@@ -74,6 +87,7 @@ const KIMI_MODELS: &[ModelVariant] = &[
         display_name: "Kimi K2.6（旗舰）",
         api_model: "kimi-k2.6",
         context_window: 256_000,
+        menu_tag: "k2.6",
     },
 ];
 
@@ -83,6 +97,7 @@ const MINIMAX_MODELS: &[ModelVariant] = &[
         display_name: "MiniMax M3（旗舰·1M）",
         api_model: "MiniMax-M3",
         context_window: 1_000_000,
+        menu_tag: "m3",
     },
 ];
 
@@ -156,6 +171,12 @@ mod tests {
         assert_eq!(popular_models("zhipu").len(), 2);
         assert_eq!(popular_models("kimi").len(), 1);
         assert_eq!(popular_models("minimax").len(), 1);
+    }
+
+    #[test]
+    fn menu_tags_are_defined_for_core_models() {
+        assert_eq!(find_model("deepseek", "deepseek-v4-pro").unwrap().menu_tag, "pro");
+        assert_eq!(find_model("qwen", "qwen3.7-plus").unwrap().menu_tag, "plus");
     }
 
     #[test]

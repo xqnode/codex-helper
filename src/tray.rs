@@ -242,23 +242,23 @@ fn active_key_configured(app: &AppConfig) -> bool {
 }
 
 #[cfg(windows)]
+fn format_provider_with_tag(name: &str, provider: &crate::config::ProviderConfig) -> String {
+    match crate::provider::models::menu_tag(provider) {
+        Some(tag) => format!("{name} · {tag}"),
+        None => name.to_string(),
+    }
+}
+
+#[cfg(windows)]
 fn menu_status_line(app: &AppConfig) -> String {
     let provider = app.active_provider().ok();
-    let name = provider.map(|p| p.name.as_str()).unwrap_or("未知");
-    let model = provider
-        .and_then(|p| crate::provider::models::find_model(&p.id, &p.default_model))
-        .map(|m| m.display_name)
-        .unwrap_or("");
+    let label = provider
+        .map(|p| format_provider_with_tag(p.name.as_str(), p))
+        .unwrap_or_else(|| "未知".to_string());
     if active_key_configured(app) {
-        if model.is_empty() {
-            format!("✓ {name} · 运行中")
-        } else {
-            format!("✓ {name} · {model}")
-        }
-    } else if model.is_empty() {
-        format!("⚠ {name} · 请先设置 API Key")
+        format!("✓ {label}")
     } else {
-        format!("⚠ {name} · {model}")
+        format!("⚠ {label} · 请先设置 API Key")
     }
 }
 
@@ -274,20 +274,22 @@ fn build_menu(app: &AppConfig) -> anyhow::Result<Menu> {
     ))?;
     menu.append(&PredefinedMenuItem::separator())?;
 
-    let active_name = app
+    let active_label = app
         .active_provider()
-        .map(|p| p.name.as_str())
-        .unwrap_or("未选择");
+        .ok()
+        .map(|p| format_provider_with_tag(p.name.as_str(), p))
+        .unwrap_or_else(|| "未选择".to_string());
     let model_menu = Submenu::with_id(
         "models",
-        format!("切换模型  ·  {active_name}"),
+        format!("切换模型  ·  {active_label}"),
         true,
     );
     for preset in crate::provider::list_presets(app) {
+        let name = format_provider_with_tag(preset.name.as_str(), preset);
         let label = if preset.id == app.active {
-            format!("✓ {}", preset.name)
+            format!("✓ {name}")
         } else {
-            preset.name.clone()
+            name
         };
         model_menu.append(&MenuItem::with_id(
             format!("use:{}", preset.id),
