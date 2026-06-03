@@ -4,6 +4,7 @@ mod codex;
 mod commands;
 mod config;
 mod env_sync;
+mod icon;
 mod paths;
 mod provider;
 mod proxy;

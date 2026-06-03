@@ -108,7 +108,8 @@ fn create_settings_window<T>(
 ) -> anyhow::Result<SettingsWindow> {
     let window = WindowBuilder::new()
         .with_title("Codex Helper · 设置")
-        .with_inner_size(tao::dpi::LogicalSize::new(480.0, 520.0))
+        .with_window_icon(Some(crate::icon::window_icon()))
+        .with_inner_size(tao::dpi::LogicalSize::new(440.0, 500.0))
         .with_resizable(false)
         .build(elwt)?;
 
@@ -139,4 +140,4 @@ fn center_on_screen(window: &Window) {
     let y = monitor_pos.y + (monitor_size.height as i32 - window_size.height as i32) / 2;
     window.set_outer_position(tao::dpi::PhysicalPosition::new(x, y));
 }
-
+

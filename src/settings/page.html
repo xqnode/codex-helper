@@ -3,99 +3,394 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Codex Helper · 设置 API Key</title>
+  <title>Codex Helper · 设置</title>
   <style>
+    :root {
+      --bg: #eef2f7;
+      --surface: #ffffff;
+      --text: #0f172a;
+      --text-secondary: #64748b;
+      --text-muted: #94a3b8;
+      --border: #e2e8f0;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-soft: rgba(37, 99, 235, 0.1);
+      --success: #059669;
+      --success-bg: #ecfdf5;
+      --success-border: #a7f3d0;
+      --error: #dc2626;
+      --error-bg: #fef2f2;
+      --error-border: #fecaca;
+      --info-bg: #eff6ff;
+      --info-border: #bfdbfe;
+      --info: #1d4ed8;
+      --radius: 12px;
+      --radius-sm: 8px;
+      --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.06);
+      --font: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
-      background: #f4f6fb;
-      color: #1e293b;
-      padding: 28px 32px 24px;
-      min-height: 100vh;
-    }
-    h1 { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
-    .sub { color: #64748b; font-size: 13px; margin-bottom: 22px; line-height: 1.5; }
-    label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #334155; }
-    select, input[type="password"], input[type="text"] {
+
+    html, body {
       width: 100%;
-      padding: 10px 12px;
-      border: 1px solid #cbd5e1;
-      border-radius: 8px;
-      font-size: 14px;
-      background: #fff;
-      margin-bottom: 16px;
+      height: 100%;
+      overflow: hidden;
     }
-    select:focus, input:focus {
-      outline: none;
-      border-color: #2563eb;
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      -webkit-font-smoothing: antialiased;
     }
-    .hint {
+
+    .shell {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 16px 20px 0;
+      gap: 10px;
+      overflow: hidden;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 2px 2px;
+      flex-shrink: 0;
+    }
+
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      background: linear-gradient(145deg, #3b82f6, #2563eb);
+      display: grid;
+      place-items: center;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.28);
+      flex-shrink: 0;
+    }
+
+    .brand-icon svg { display: block; }
+
+    .brand-text h1 {
+      font-size: 15px;
+      font-weight: 650;
+      letter-spacing: -0.01em;
+      line-height: 1.2;
+    }
+
+    .brand-text p {
+      margin-top: 2px;
       font-size: 12px;
-      color: #64748b;
-      margin: -10px 0 16px;
+      color: var(--text-secondary);
+      line-height: 1.4;
     }
-    .hint a { color: #2563eb; text-decoration: none; }
-    .hint a:hover { text-decoration: underline; }
-    .status {
-      min-height: 40px;
-      padding: 10px 12px;
-      border-radius: 8px;
-      font-size: 13px;
-      margin-bottom: 16px;
-      display: none;
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 14px;
+      flex-shrink: 0;
     }
-    .status.ok { display: block; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
-    .status.err { display: block; background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
-    .status.info { display: block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
-    .actions { display: flex; gap: 10px; }
-    button {
-      flex: 1;
-      padding: 11px 16px;
-      border: none;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    #testBtn { background: #fff; color: #334155; border: 1px solid #cbd5e1; }
-    #testBtn:hover { background: #f8fafc; }
-    #saveBtn { background: #2563eb; color: #fff; }
-    #saveBtn:hover { background: #1d4ed8; }
-    button:disabled { opacity: 0.55; cursor: not-allowed; }
-    .badge {
-      display: inline-block;
+
+    .card-title {
       font-size: 11px;
-      padding: 2px 8px;
-      border-radius: 999px;
-      background: #e2e8f0;
-      color: #475569;
-      margin-left: 6px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+
+    .field + .field { margin-top: 10px; }
+
+    .field-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #334155;
+      margin-bottom: 6px;
+    }
+
+    select,
+    .input-wrap input {
+      width: 100%;
+      height: 40px;
+      min-height: 40px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--text);
+      background: #fff;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    select {
+      padding-right: 32px;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+    }
+
+    select:hover,
+    .input-wrap input:hover {
+      border-color: #cbd5e1;
+    }
+
+    select:focus,
+    .input-wrap input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-soft);
+    }
+
+    .model-meta {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.35;
+      min-height: 16px;
+    }
+
+    .input-wrap {
+      position: relative;
+    }
+
+    .input-wrap input {
+      padding-right: 44px;
+    }
+
+    .toggle-key {
+      position: absolute;
+      right: 4px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 36px;
+      height: 36px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .toggle-key:hover {
+      background: #f1f5f9;
+      color: var(--text-secondary);
+    }
+
+    .toggle-key:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 1px;
+    }
+
+    .field-foot {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .field-foot a {
+      color: var(--primary);
+      text-decoration: none;
       font-weight: 500;
     }
-    .badge.ok { background: #d1fae5; color: #047857; }
+
+    .field-foot a:hover { text-decoration: underline; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      height: 20px;
+      padding: 0 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      background: #f1f5f9;
+      color: #64748b;
+    }
+
+    .badge.ok {
+      background: var(--success-bg);
+      color: var(--success);
+    }
+
+    .footer {
+      flex-shrink: 0;
+      padding: 10px 20px 14px;
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+    }
+
+    .status {
+      min-height: 0;
+      margin-bottom: 10px;
+      padding: 0;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      line-height: 1.45;
+      display: none;
+      overflow: hidden;
+      transition: opacity 0.2s ease;
+    }
+
+    .status.show {
+      display: block;
+      padding: 10px 12px;
+    }
+
+    .status.ok {
+      background: var(--success-bg);
+      color: var(--success);
+      border: 1px solid var(--success-border);
+    }
+
+    .status.err {
+      background: var(--error-bg);
+      color: var(--error);
+      border: 1px solid var(--error-border);
+    }
+
+    .status.info {
+      background: var(--info-bg);
+      color: var(--info);
+      border: 1px solid var(--info-border);
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    button.action {
+      flex: 1;
+      height: 40px;
+      min-height: 40px;
+      padding: 0 16px;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+    }
+
+    button.action:active:not(:disabled) {
+      transform: scale(0.985);
+    }
+
+    button.action:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+
+    #testBtn {
+      background: var(--surface);
+      color: #334155;
+      border: 1px solid var(--border);
+    }
+
+    #testBtn:hover:not(:disabled) {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+    }
+
+    #saveBtn {
+      background: var(--primary);
+      color: #fff;
+      border: 1px solid transparent;
+      box-shadow: 0 1px 2px rgba(37, 99, 235, 0.2);
+    }
+
+    #saveBtn:hover:not(:disabled) {
+      background: var(--primary-hover);
+    }
+
+    button.action:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+      }
+    }
   </style>
 </head>
 <body>
-  <h1>设置</h1>
-  <p class="sub">选择厂商和模型版本，粘贴 Key 后保存。Codex 里可直接切换具体型号。</p>
+  <div class="shell">
+    <header class="brand">
+      <div class="brand-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z" fill="#F5C84A" stroke="#E8A317" stroke-width="0.5" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <h1>Codex Helper</h1>
+        <p>选择厂商与模型，保存 Key 即可使用</p>
+      </div>
+    </header>
 
-  <label for="provider">厂商</label>
-  <select id="provider"></select>
+    <section class="card" aria-labelledby="model-section">
+      <div class="card-title" id="model-section">模型</div>
+      <div class="field">
+        <label class="field-label" for="provider">厂商</label>
+        <select id="provider"></select>
+      </div>
+      <div class="field">
+        <label class="field-label" for="model">型号</label>
+        <select id="model"></select>
+        <p class="model-meta" id="contextHint"></p>
+      </div>
+    </section>
 
-  <label for="model">热门模型</label>
-  <select id="model"></select>
-  <p class="hint" id="contextHint"></p>
-  <label for="apiKey">API Key <span id="keyBadge" class="badge">未配置</span></label>
-  <input id="apiKey" type="password" placeholder="粘贴 sk- 开头的 Key" autocomplete="off" />
-  <p class="hint">还没有 Key？<a id="signupLink" href="#" target="_blank">点此去官网申请</a></p>
-
-  <div id="status" class="status"></div>
-
-  <div class="actions">
-    <button type="button" id="testBtn">测试连接</button>
-    <button type="button" id="saveBtn">保存</button>
+    <section class="card" aria-labelledby="key-section">
+      <div class="card-title" id="key-section">API Key</div>
+      <div class="field">
+        <label class="field-label" for="apiKey">
+          Key
+          <span id="keyBadge" class="badge">未配置</span>
+        </label>
+        <div class="input-wrap">
+          <input id="apiKey" type="password" placeholder="粘贴 sk- 开头的 Key" autocomplete="off" spellcheck="false" />
+          <button type="button" class="toggle-key" id="toggleKey" aria-label="显示 Key" title="显示 Key">
+            <svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
+        <p class="field-foot">还没有 Key？<a id="signupLink" href="#" target="_blank" rel="noopener">点此去官网申请</a></p>
+      </div>
+    </section>
   </div>
+
+  <footer class="footer">
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+    <div class="actions">
+      <button type="button" class="action" id="testBtn">测试连接</button>
+      <button type="button" class="action" id="saveBtn">保存</button>
+    </div>
+  </footer>
 
   <script>
     let providers = [];
@@ -103,7 +398,13 @@
     function showStatus(text, kind) {
       const el = document.getElementById('status');
       el.textContent = text;
-      el.className = 'status ' + kind;
+      el.className = 'status show ' + (kind || '');
+    }
+
+    function hideStatus() {
+      const el = document.getElementById('status');
+      el.className = 'status';
+      el.textContent = '';
     }
 
     function selected() {
@@ -115,7 +416,7 @@
       const link = document.getElementById('signupLink');
       if (p && p.signup_url) {
         link.href = p.signup_url;
-        link.textContent = '点此去 ' + p.name + ' 官网申请 Key';
+        link.textContent = '点此去 ' + p.name + ' 官网申请';
       }
     }
 
@@ -156,7 +457,7 @@
       const model = p?.models?.find(m => m.slug === slug);
       const hint = document.getElementById('contextHint');
       hint.textContent = model
-        ? `上下文窗口：${model.context} · Codex 中显示为 ${slug}`
+        ? '上下文 ' + model.context + ' · Codex 显示 ' + slug
         : '';
     }
 
@@ -165,7 +466,7 @@
       const input = document.getElementById('apiKey');
       if (clearInput) input.value = '';
       if (p && p.key_preview) {
-        input.placeholder = `已保存 ${p.key_preview}，粘贴新 Key 可覆盖`;
+        input.placeholder = '已保存 ' + p.key_preview + '，粘贴可覆盖';
       } else {
         input.placeholder = '粘贴 sk- 开头的 Key';
       }
@@ -189,13 +490,26 @@
     }
 
     document.getElementById('provider').addEventListener('change', () => {
+      hideStatus();
       updateSignupLink();
       updateKeyBadge(selected()?.key_configured);
       refreshModelOptions();
       refreshKeyField(true);
     });
 
-    document.getElementById('model').addEventListener('change', updateContextHint);
+    document.getElementById('model').addEventListener('change', () => {
+      hideStatus();
+      updateContextHint();
+    });
+
+    document.getElementById('toggleKey').addEventListener('click', () => {
+      const input = document.getElementById('apiKey');
+      const btn = document.getElementById('toggleKey');
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.setAttribute('aria-label', show ? '隐藏 Key' : '显示 Key');
+      btn.title = show ? '隐藏 Key' : '显示 Key';
+    });
 
     async function api(path, body) {
       const res = await fetch(path, {
@@ -250,7 +564,7 @@
           model_slug: modelSlug,
         });
         if (data.ok) {
-          showStatus(data.message || '已保存！请完全退出并重新打开 Codex Desktop。', 'ok');
+          showStatus(data.message || '已保存，请重启 Codex Desktop 生效', 'ok');
           const p = selected();
           if (p) {
             p.current_model = modelSlug;
@@ -260,6 +574,7 @@
             }
           }
           updateKeyBadge(true);
+          refreshKeyField(false);
         } else {
           showStatus(data.message || '保存失败', 'err');
         }
