@@ -9,21 +9,9 @@
 
 ## 界面预览
 
-**1. 系统托盘菜单 — 右键一下，切换模型**
+右键系统托盘图标，即可切换模型、打开设置或同步配置：
 
-![托盘菜单](assets/mockup-tray-menu.png)
-
-**2. 首次启动引导 — 30 秒完成配置**
-
-![首次引导](assets/mockup-onboarding.png)
-
-**3. 友好的错误提示 — 看得懂、知道怎么办**
-
-![错误提示](assets/mockup-error-dialog.png)
-
-**4. 设置窗口 — 模型与 Key 集中管理**
-
-![设置窗口](assets/mockup-settings.png)
+![系统托盘菜单](assets/tray-menu.png)
 
 ---
 
@@ -319,6 +307,16 @@ A：设置中可填系统代理或 HTTP 代理。
 - **打包**：Windows Inno Setup / macOS dmg / Linux AppImage
 
 预计单文件 < 10MB，内存占用 < 30MB。
+
+---
+
+## 交流群
+
+扫码加入 **AI 交流群**（企业微信），交流 Codex 使用心得、反馈问题：
+
+<p align="center">
+  <img src="assets/ai-group-qr.png" alt="AI 交流群二维码" width="240">
+</p>
 
 ---
 
