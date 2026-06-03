@@ -1,27 +1,27 @@
-# Changelog
+# 更新日志
 
-All notable changes to this project are documented in this file.
+本项目的所有重要变更均记录在此文件中。
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
+版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
 ## [0.1.0] - 2026-06-03
 
-### Added
+### 新增
 
-- Windows system tray app that proxies Codex CLI to OpenAI-compatible Chinese LLM APIs
-- Supported providers: DeepSeek, Qwen, Zhipu (GLM), Kimi (Moonshot), MiniMax
-- WebView2 settings UI for API keys, provider switching, and model selection
-- Local HTTP proxy with hot reload (`codex-helper reload`)
-- Automatic sync to `~/.codex/config.toml` and model catalog
-- CLI commands: `init`, `start`, `doctor`, `settings`
-- Portable ZIP and Inno Setup installer build scripts
-- 29 unit/integration tests
+- Windows 系统托盘应用，将 Codex CLI 代理到国产 OpenAI 兼容大模型 API
+- 支持 DeepSeek、通义千问、智谱 GLM、Kimi（Moonshot）、MiniMax
+- WebView2 设置界面：管理 API Key、切换厂商与模型
+- 本地 HTTP 代理，支持热重载（`codex-helper reload`）
+- 自动同步 `~/.codex/config.toml` 与模型目录
+- CLI 命令：`init`、`start`、`doctor`、`settings`
+- 便携 ZIP 与 Inno Setup 安装包构建脚本
+- 29 项单元/集成测试
 
-### Fixed
+### 修复
 
-- Closing the settings window no longer exits the entire tray application
-- Model catalog lists only models from the active provider
-- Removed sandbox/approval keys from Codex config to avoid unwanted "custom config" mode
+- 关闭设置窗口不再导致整个托盘程序退出
+- 模型目录仅展示当前激活厂商的模型
+- 移除 Codex 配置中的 sandbox/approval 项，避免出现「自定义 (config.toml)」权限模式
 
 [0.1.0]: https://github.com/xqnode/codex-helper/releases/tag/v0.1.0

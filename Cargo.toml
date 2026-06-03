@@ -2,7 +2,7 @@
 name = "codex-helper"
 version = "0.1.0"
 edition = "2021"
-description = "Lightweight tray proxy to switch Codex CLI to DeepSeek and other OpenAI-compatible models"
+description = "轻量 Windows 托盘代理，让 Codex CLI 一键切换 DeepSeek、通义千问等国产大模型"
 license = "MIT"
 
 [[bin]]
