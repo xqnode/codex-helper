@@ -30,6 +30,8 @@ pub fn signup_url(provider_id: &str) -> &'static str {
         "kimi" | "moonshot" => "https://platform.moonshot.cn/",
         "zhipu" => "https://www.bigmodel.cn/",
         "minimax" => "https://platform.minimaxi.com/",
-        _ => "https://platform.deepseek.com/",
+        "mimo" => "https://platform.xiaomimimo.com/",
+        "custom" => "",
+        _ => "",
     }
 }

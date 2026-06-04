@@ -12,9 +12,29 @@ pub async fn switch_provider(
     proxy: &Arc<ProxyState>,
     provider_id: &str,
 ) -> anyhow::Result<()> {
+    let model_slug = {
+        let app = config.read().await;
+        let provider = provider::get_preset(&app, provider_id)?;
+        provider.default_model.clone()
+    };
+    switch_provider_model(config, proxy, provider_id, &model_slug).await
+}
+
+pub async fn switch_provider_model(
+    config: &Arc<RwLock<AppConfig>>,
+    proxy: &Arc<ProxyState>,
+    provider_id: &str,
+    model_slug: &str,
+) -> anyhow::Result<()> {
     let mut app = config.write().await;
     provider::get_preset(&app, provider_id)?;
     app.active = provider_id.to_string();
+
+    let provider = app
+        .providers
+        .get_mut(provider_id)
+        .ok_or_else(|| anyhow::anyhow!("未知模型预设: {provider_id}"))?;
+    provider::models::apply_model_variant(provider, model_slug)?;
     app.save()?;
     codex::inject_proxy_config(&app)?;
 
@@ -22,7 +42,8 @@ pub async fn switch_provider(
     *proxy_cfg = app.clone();
     drop(proxy_cfg);
 
-    tracing::info!("已切换模型: {} ({})", provider_id, app.active_provider()?.name);
+    let name = app.active_provider()?.name.clone();
+    tracing::info!("已切换模型: {name} · {model_slug}");
     Ok(())
 }
 

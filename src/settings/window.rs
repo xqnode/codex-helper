@@ -109,7 +109,7 @@ fn create_settings_window<T>(
     let window = WindowBuilder::new()
         .with_title("Codex Helper · 设置")
         .with_window_icon(Some(crate::icon::window_icon()))
-        .with_inner_size(tao::dpi::LogicalSize::new(440.0, 500.0))
+        .with_inner_size(tao::dpi::LogicalSize::new(440.0, 480.0))
         .with_resizable(false)
         .build(elwt)?;
 

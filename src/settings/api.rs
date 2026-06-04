@@ -1,6 +1,5 @@
 use axum::extract::State;
 use axum::response::{Html, IntoResponse, Json};
-use reqwest::Client;
 use serde::Deserialize;
 
 use crate::codex;
@@ -16,16 +15,6 @@ fn mask_key_preview(key: &str) -> String {
         return "***".into();
     }
     format!("{}...{}", &key[..4], &key[key.len() - 4..])
-}
-
-fn format_context(tokens: u32) -> String {
-    if tokens >= 1_000_000 {
-        "1M".into()
-    } else if tokens >= 1000 {
-        format!("{}K", tokens / 1000)
-    } else {
-        tokens.to_string()
-    }
 }
 
 pub async fn settings_page() -> Html<&'static str> {
@@ -50,23 +39,14 @@ pub async fn settings_bootstrap() -> impl IntoResponse {
         let key_preview = config::resolve_api_key(&preset.api_key_env)
             .ok()
             .map(|k| mask_key_preview(&k));
-        let key_configured = key_preview.is_some();
         providers.push(serde_json::json!({
             "id": preset.id,
             "name": preset.name,
-            "env_key": preset.api_key_env,
             "signup_url": settings::signup_url(&preset.id),
-            "key_configured": key_configured,
+            "key_configured": key_preview.is_some(),
             "key_preview": key_preview,
-            "current_model": preset.default_model,
-            "models": provider::models::popular_models(&preset.id)
-                .iter()
-                .map(|m| serde_json::json!({
-                    "slug": m.slug,
-                    "name": m.display_name,
-                    "context": format_context(m.context_window),
-                }))
-                .collect::<Vec<_>>(),
+            "base_url": preset.base_url,
+            "is_custom": preset.id == "custom",
         }));
     }
 
@@ -83,7 +63,7 @@ pub struct SettingsSaveBody {
     #[serde(default)]
     api_key: String,
     #[serde(default)]
-    model_slug: String,
+    base_url: String,
 }
 
 pub async fn settings_save(
@@ -94,7 +74,7 @@ pub async fn settings_save(
         &state,
         &body.provider_id,
         body.api_key.trim(),
-        body.model_slug.trim(),
+        body.base_url.trim(),
     )
     .await
     {
@@ -117,7 +97,7 @@ pub struct SettingsTestBody {
     #[serde(default)]
     api_key: String,
     #[serde(default)]
-    model_slug: String,
+    base_url: String,
 }
 pub async fn settings_test(Json(body): Json<SettingsTestBody>) -> impl IntoResponse {
     let app = match AppConfig::load() {
@@ -142,8 +122,12 @@ pub async fn settings_test(Json(body): Json<SettingsTestBody>) -> impl IntoRespo
         }
     };
 
-    if !body.model_slug.trim().is_empty() {
-        let _ = provider::models::apply_model_variant(&mut provider, body.model_slug.trim());
+    if let Err(err) = apply_custom_base_url(&mut provider, body.base_url.trim()) {
+        return Json(serde_json::json!({
+            "ok": false,
+            "message": format!("{err:#}"),
+        }))
+        .into_response();
     }
 
     let api_key = match resolve_key_for_request(&provider, body.api_key.trim()) {
@@ -174,17 +158,16 @@ async fn save_api_key(
     state: &ProxyState,
     provider_id: &str,
     api_key: &str,
-    model_slug: &str,
+    base_url: &str,
 ) -> anyhow::Result<String> {
     let mut app = AppConfig::load()?;
+    provider::get_preset(&app, provider_id)?;
     let provider_cfg = app
         .providers
         .get_mut(provider_id)
         .ok_or_else(|| anyhow::anyhow!("未知模型预设: {provider_id}"))?;
 
-    if !model_slug.is_empty() {
-        provider::models::apply_model_variant(provider_cfg, model_slug)?;
-    }
+    apply_custom_base_url(provider_cfg, base_url)?;
 
     let provider = provider_cfg.clone();
     if !api_key.is_empty() {
@@ -193,22 +176,31 @@ async fn save_api_key(
         anyhow::bail!("API Key 不能为空");
     }
 
-    if app.active != provider_id {
-        app.active = provider_id.to_string();
-    }
     app.save()?;
 
     codex::inject_proxy_config(&app)?;
     reload_config_in_state(state).await?;
 
-    let model_label = provider::models::find_model(provider_id, &provider.default_model)
-        .map(|m| m.display_name.to_string())
-        .unwrap_or_else(|| provider.default_model.clone());
-
     Ok(format!(
-        "已保存 {} · {}。请完全退出并重新打开 Codex Desktop。",
-        provider.name, model_label
+        "已保存 {} 配置。请完全退出并重新打开 Codex Desktop。",
+        provider.name
     ))
+}
+
+fn apply_custom_base_url(
+    provider: &mut config::ProviderConfig,
+    base_url: &str,
+) -> anyhow::Result<()> {
+    if provider.id != "custom" {
+        return Ok(());
+    }
+    if base_url.is_empty() && provider.base_url.trim().is_empty() {
+        anyhow::bail!("请填写 Base URL");
+    }
+    if !base_url.is_empty() {
+        provider.base_url = config::validate_base_url(base_url)?;
+    }
+    Ok(())
 }
 
 fn resolve_key_for_request(
@@ -225,10 +217,11 @@ pub async fn test_api_key(provider: &config::ProviderConfig, api_key: &str) -> a
     if api_key.is_empty() {
         anyhow::bail!("API Key 不能为空");
     }
+    if provider.id == "custom" && provider.base_url.trim().is_empty() {
+        anyhow::bail!("请填写 Base URL");
+    }
 
-    let client = Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()?;
+    let client = config::build_upstream_client(std::time::Duration::from_secs(30))?;
 
     let url = format!(
         "{}/chat/completions",

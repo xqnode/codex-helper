@@ -80,9 +80,16 @@ impl ProviderConfig {
             ("qwen", "qwen3.7-max") => "千问 3.7 Max".into(),
             ("qwen", "qwen3.7-plus") => "千问 3.7 Plus".into(),
             ("zhipu", "glm-5") => "GLM-5".into(),
+            ("zhipu", "glm-5.1") => "GLM-5.1".into(),
             ("zhipu", "glm-4.7") => "GLM-4.7".into(),
             ("kimi", "kimi-k2.6") => "Kimi K2.6".into(),
             ("minimax", "minimax-m3") => "MiniMax M3".into(),
+            ("mimo", "mimo-v2.5-pro") => "MiMo V2.5 Pro".into(),
+            ("mimo", "mimo-v2.5") => "MiMo V2.5".into(),
+            ("mimo", "mimo-v2-flash") => "MiMo V2 Flash".into(),
+            ("custom", "gpt-5.5") => "GPT-5.5".into(),
+            ("custom", "gpt-5.4") => "GPT-5.4".into(),
+            ("custom", "gpt-5.4-mini") => "GPT-5.4 Mini".into(),
             _ => self.name.clone(),
         }
     }
@@ -142,6 +149,30 @@ impl AppConfig {
     pub fn proxy_base_url(&self) -> String {
         format!("http://{}:{}/v1", self.proxy.host, self.proxy.port)
     }
+}
+
+pub fn normalize_base_url(url: &str) -> String {
+    url.trim().trim_end_matches('/').to_string()
+}
+
+pub fn validate_base_url(url: &str) -> anyhow::Result<String> {
+    let normalized = normalize_base_url(url);
+    if normalized.is_empty() {
+        anyhow::bail!("请填写 Base URL");
+    }
+    if !normalized.starts_with("http://") && !normalized.starts_with("https://") {
+        anyhow::bail!("Base URL 需以 http:// 或 https:// 开头");
+    }
+    Ok(normalized)
+}
+
+/// 访问上游大模型 / 中转站 API 的 HTTP 客户端：直连，不经过系统代理（Clash、VPN 等）。
+pub fn build_upstream_client(timeout: std::time::Duration) -> anyhow::Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .no_proxy()
+        .timeout(timeout)
+        .build()
+        .map_err(Into::into)
 }
 
 pub fn write_atomic(path: &std::path::Path, content: &str) -> anyhow::Result<()> {

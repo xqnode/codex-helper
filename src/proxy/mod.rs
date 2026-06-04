@@ -16,23 +16,29 @@ use tracing::{info, warn};
 use crate::config::{self, AppConfig};
 
 mod codex_compat;
+mod logged_stream;
 mod responses_to_chat;
-use responses_to_chat::convert_responses_to_chat;
+use logged_stream::LoggingByteStream;
+use responses_to_chat::{convert_responses_to_chat, normalize_messages_for_upstream};
+use crate::logs::{logs_bootstrap, logs_clear, logs_page};
+use crate::request_log::{
+    extract_model_from_body, parse_usage_from_json, PendingRequest, RequestLogStore,
+};
 use crate::settings::{settings_bootstrap, settings_page, settings_save, settings_test};
 
 #[derive(Clone)]
 pub struct ProxyState {
     pub config: Arc<RwLock<AppConfig>>,
     pub client: Client,
+    pub request_log: RequestLogStore,
 }
 
 pub fn spawn_server(config: AppConfig) -> anyhow::Result<Arc<ProxyState>> {
     let state = Arc::new(ProxyState {
         config: Arc::new(RwLock::new(config.clone())),
-        client: Client::builder()
-            .timeout(std::time::Duration::from_secs(300))
-            .build()
+        client: config::build_upstream_client(std::time::Duration::from_secs(300))
             .expect("failed to build HTTP client"),
+        request_log: RequestLogStore::new(),
     });
     let addr = format!("{}:{}", config.proxy.host, config.proxy.port);
     let serve_state = state.clone();
@@ -74,9 +80,8 @@ pub async fn start_server(config: AppConfig) -> anyhow::Result<()> {
     let addr = format!("{}:{}", config.proxy.host, config.proxy.port);
     let state = ProxyState {
         config: Arc::new(RwLock::new(config.clone())),
-        client: Client::builder()
-            .timeout(std::time::Duration::from_secs(300))
-            .build()?,
+        client: config::build_upstream_client(std::time::Duration::from_secs(300))?,
+        request_log: RequestLogStore::new(),
     };
     run_listener(Arc::new(state), &addr).await
 }
@@ -89,6 +94,9 @@ async fn run_listener(state: Arc<ProxyState>, addr: &str) -> anyhow::Result<()> 
         .route("/admin/settings/bootstrap", get(settings_bootstrap))
         .route("/admin/settings/save", post(settings_save))
         .route("/admin/settings/test", post(settings_test))
+        .route("/admin/logs", get(logs_page))
+        .route("/admin/logs/bootstrap", get(logs_bootstrap))
+        .route("/admin/logs/clear", post(logs_clear))
         .route("/v1/models", get(list_models))
         .route("/v1/chat/completions", post(proxy_chat))
         .route("/v1/responses", post(proxy_responses))
@@ -235,9 +243,10 @@ async fn forward_request(
     state: &ProxyState,
     upstream_path: &str,
     method: Method,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
+    let started = std::time::Instant::now();
     let config = state.config.read().await.clone();
     let provider = match config.active_provider() {
         Ok(p) => p.clone(),
@@ -250,9 +259,32 @@ async fn forward_request(
         }
     };
 
+    let rewritten_body = if body.is_empty() {
+        None
+    } else {
+        Some(normalize_upstream_body(&body, &provider))
+    };
+    let model = rewritten_body
+        .as_ref()
+        .map(|bytes| extract_model_from_body(bytes, provider.upstream_model()))
+        .unwrap_or_else(|| provider.upstream_model().to_string());
+    let pending_base = PendingRequest {
+        provider_id: provider.id.clone(),
+        provider_name: provider.name.clone(),
+        model,
+        path: upstream_path.to_string(),
+        stream: false,
+        started,
+        status: 0,
+    };
+
     let api_key = match config::resolve_api_key(&provider.api_key_env) {
         Ok(key) => key,
         Err(err) => {
+            let mut pending = pending_base;
+            pending.status = StatusCode::UNAUTHORIZED.as_u16();
+            let entry = state.request_log.finalize(pending, None);
+            state.request_log.push(entry).await;
             return (
                 StatusCode::UNAUTHORIZED,
                 axum::Json(serde_json::json!({
@@ -275,28 +307,17 @@ async fn forward_request(
     let mut request = state.client.request(method, &target);
     request = request.header("Authorization", format!("Bearer {api_key}"));
     request = request.header("Content-Type", "application/json");
+    // 不转发 Codex 客户端请求头（Accept / OpenAI-Beta 等），避免中转站报 Unsupported content type
 
-    for (name, value) in &headers {
-        let name = name.as_str();
-        if name.eq_ignore_ascii_case("host")
-            || name.eq_ignore_ascii_case("authorization")
-            || name.eq_ignore_ascii_case("content-length")
-        {
-            continue;
-        }
-        if let Ok(v) = value.to_str() {
-            request = request.header(name, v);
-        }
-    }
-
-    if !body.is_empty() {
-        let rewritten = normalize_upstream_body(&body, &provider);
+    if let Some(rewritten) = rewritten_body {
         request = request.body(rewritten);
     }
 
     match request.send().await {
         Ok(resp) => {
             let status = resp.status();
+            let mut pending = pending_base;
+            pending.status = status.as_u16();
             let mut response_headers = HeaderMap::new();
             let mut is_sse = false;
             for (name, value) in resp.headers() {
@@ -316,20 +337,31 @@ async fn forward_request(
             }
 
             if is_sse {
-                // 上游是 SSE：保留流式，不要 .bytes().await 把整个响应吸成
-                // 一坨——下游（cc-switch 翻译层 / Codex Desktop）需要逐 chunk
-                // 处理。content-length 也得拿掉，否则 axum 会期待固定长度。
+                pending.stream = true;
                 response_headers.remove(reqwest::header::CONTENT_LENGTH);
-                let stream = resp.bytes_stream();
+                let stream = LoggingByteStream::new(
+                    resp.bytes_stream(),
+                    pending,
+                    state.request_log.clone(),
+                );
                 let body = Body::from_stream(stream);
                 (status, response_headers, body).into_response()
             } else {
                 let bytes = resp.bytes().await.unwrap_or_default();
+                let usage = serde_json::from_slice::<serde_json::Value>(&bytes)
+                    .ok()
+                    .and_then(|value| parse_usage_from_json(&value));
+                let entry = state.request_log.finalize(pending, usage);
+                state.request_log.push(entry).await;
                 (status, response_headers, Body::from(bytes)).into_response()
             }
         }
         Err(err) => {
             warn!("上游请求失败: {target} -> {err}");
+            let mut pending = pending_base;
+            pending.status = StatusCode::BAD_GATEWAY.as_u16();
+            let entry = state.request_log.finalize(pending, None);
+            state.request_log.push(entry).await;
             (
                 StatusCode::BAD_GATEWAY,
                 axum::Json(serde_json::json!({
@@ -409,12 +441,19 @@ async fn convert_chat_response_to_responses(response: Response) -> Response {
         )
             .into_response(),
         Err(err) => {
-            warn!("Chat 响应转换 Responses 失败: {err}");
+            let hint = if bytes.starts_with(b"<") || bytes.windows(5).any(|w| w == b"<!DOC" || w == b"<html") {
+                "（上游返回了 HTML 页面，请确认 Base URL 是否应以 /v1 结尾，例如 http://host:8080/v1）"
+            } else if bytes.is_empty() {
+                "（上游响应体为空）"
+            } else {
+                ""
+            };
+            warn!("Chat 响应转换 Responses 失败: {err}{hint}");
             (
                 StatusCode::BAD_GATEWAY,
                 axum::Json(serde_json::json!({
                     "error": {
-                        "message": format!("Chat 响应转换 Responses 失败: {err}"),
+                        "message": format!("Chat 响应转换 Responses 失败: {err}{hint}"),
                         "type": "upstream_error"
                     }
                 })),
@@ -506,7 +545,7 @@ mod tests {
         );
         let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(v["messages"][0]["role"], "system");
-        assert_eq!(v["messages"][0]["content"][0]["type"], "text");
+        assert_eq!(v["messages"][0]["content"], "hi");
         assert_eq!(v["model"], "deepseek-v4-flash");
     }
 
@@ -522,79 +561,14 @@ mod tests {
     }
 }
 
-/// Codex Responses/Chat API 使用 `developer` 等角色，DeepSeek 等上游只认 system/user/assistant/tool。
-fn map_role_for_upstream(role: &str) -> &str {
-    match role {
-        "developer" | "latest_reminder" => "system",
-        _ => role,
-    }
-}
-
-fn normalize_messages_for_upstream(value: &mut serde_json::Value) {
-    let Some(messages) = value.get_mut("messages").and_then(|m| m.as_array_mut()) else {
-        return;
-    };
-    for msg in messages {
-        let Some(obj) = msg.as_object_mut() else {
-            continue;
-        };
-        let Some(role) = obj.get("role").and_then(|r| r.as_str()) else {
-            continue;
-        };
-        let mapped = map_role_for_upstream(role);
-        if mapped != role {
-            obj.insert("role".into(), serde_json::Value::String(mapped.to_string()));
-        }
-
-        if let Some(content) = obj.get("content").cloned() {
-            obj.insert("content".into(), normalize_content_for_upstream(&content));
-        }
-    }
-}
-
-fn normalize_content_for_upstream(content: &serde_json::Value) -> serde_json::Value {
-    let serde_json::Value::Array(parts) = content else {
-        return content.clone();
-    };
-
-    let mut normalized = Vec::new();
-    for part in parts {
-        let Some(obj) = part.as_object() else {
-            normalized.push(part.clone());
-            continue;
-        };
-
-        let kind = obj.get("type").and_then(|v| v.as_str()).unwrap_or("");
-        match kind {
-            "input_text" | "output_text" => {
-                normalized.push(serde_json::json!({
-                    "type": "text",
-                    "text": obj.get("text").cloned().unwrap_or(serde_json::Value::String(String::new())),
-                }));
-            }
-            "text" => normalized.push(part.clone()),
-            // DeepSeek chat/completions is text-only for this integration path.
-            "input_image" | "image_url" => {}
-            _ => {
-                if let Some(text) = obj.get("text") {
-                    normalized.push(serde_json::json!({
-                        "type": "text",
-                        "text": text,
-                    }));
-                }
-            }
-        }
-    }
-
-    serde_json::Value::Array(normalized)
-}
-
 fn normalize_upstream_body(body: &axum::body::Bytes, provider: &config::ProviderConfig) -> Vec<u8> {
     let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(body) else {
         return body.to_vec();
     };
 
-    normalize_messages_for_upstream(&mut value);
+    if let Some(messages) = value.get_mut("messages").and_then(|m| m.as_array_mut()) {
+        normalize_messages_for_upstream(messages);
+    }
 
     let upstream = provider.upstream_model();
     if !upstream.trim().is_empty() {

@@ -26,3 +26,6 @@ mod streaming_codex_chat;
 
 #[allow(unused_imports)]
 pub use streaming_codex_chat::create_responses_sse_stream_from_chat;
+pub(crate) use codex_chat_common::{
+    append_reasoning_content, extract_reasoning_field_text, extract_reasoning_summary_text,
+};

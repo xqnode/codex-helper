@@ -2,7 +2,6 @@
 
 #[cfg(windows)]
 const ICON_SIZE: u32 = 32;
-
 #[cfg(windows)]
 pub fn tray_icon() -> tray_icon::Icon {
     let (rgba, size) = app_icon_rgba();
@@ -93,8 +92,7 @@ fn scale_polygon(verts: &[(f32, f32)], cx: f32, cy: f32, scale: f32) -> Vec<(f32
 }
 
 #[cfg(windows)]
-fn point_in_polygon(x: f32, y: f32, verts: &[(f32, f32)]) -> bool {
-    let mut inside = false;
+fn point_in_polygon(x: f32, y: f32, verts: &[(f32, f32)]) -> bool {    let mut inside = false;
     let n = verts.len();
     let mut j = n - 1;
     for i in 0..n {

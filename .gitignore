@@ -29,6 +29,9 @@ secrets.json
 Thumbs.db
 desktop.ini
 
+# Local dev notes (not for commit)
+/docs/local-dev.md
+
 # Logs
 *.log
 

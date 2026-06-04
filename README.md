@@ -153,9 +153,9 @@ Error: 401 Unauthorized
 | **通义千问** | 阿里生态，国内速度快 | [dashscope.aliyun.com](https://dashscope.aliyun.com/) |
 | **Moonshot** | 长上下文优秀 | [platform.moonshot.cn](https://platform.moonshot.cn/) |
 | **智谱 GLM** | 中文能力强 | [bigmodel.cn](https://www.bigmodel.cn/) |
-| **自定义** | 任何 OpenAI 兼容 API | — |
+| **中转站** | 任何 OpenAI 兼容 API | — |
 
-> 自定义端点也是在 GUI 里填，不用编辑配置文件。
+> 中转站端点也是在 GUI 里填，不用编辑配置文件。
 
 ---
 
@@ -186,7 +186,7 @@ Error: 401 Unauthorized
                                                       ▼
                               ┌───────────┬──────────┬──────────┐
                               ▼           ▼          ▼          ▼
-                         DeepSeek      通义        Moonshot   自定义
+                         DeepSeek      通义        Moonshot   中转站
 ```
 
 - Codex 的 `~/.codex/config.toml` 一次性写好，永不再改

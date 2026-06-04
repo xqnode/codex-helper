@@ -5,9 +5,11 @@ mod commands;
 mod config;
 mod env_sync;
 mod icon;
+mod logs;
 mod paths;
 mod provider;
 mod proxy;
+mod request_log;
 mod settings;
 
 #[cfg(windows)]

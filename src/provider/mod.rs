@@ -3,7 +3,7 @@ pub mod presets;
 
 use crate::config::ProviderConfig;
 
-const PRESET_ORDER: &[&str] = &["deepseek", "qwen", "zhipu", "kimi", "minimax"];
+const PRESET_ORDER: &[&str] = &["deepseek", "qwen", "zhipu", "kimi", "minimax", "mimo", "custom"];
 
 pub fn list_presets(config: &crate::config::AppConfig) -> Vec<&ProviderConfig> {
     PRESET_ORDER
@@ -39,7 +39,9 @@ pub fn sync_builtin_presets(app: &mut crate::config::AppConfig) {
     app.providers.remove("moonshot");
     for preset in presets::builtin_presets() {
         if let Some(existing) = app.providers.get_mut(&preset.id) {
-            existing.base_url = preset.base_url.clone();
+            if existing.id != "custom" {
+                existing.base_url = preset.base_url.clone();
+            }
             existing.api_key_env = preset.api_key_env.clone();
             existing.name = preset.name.clone();
             existing.wire_api = preset.wire_api.clone();
@@ -54,6 +56,20 @@ pub fn sync_builtin_presets(app: &mut crate::config::AppConfig) {
 mod tests {
     use super::*;
     use crate::config::AppConfig;
+
+    #[test]
+    fn sync_preserves_custom_base_url() {
+        let mut app = AppConfig::default();
+        app.providers
+            .get_mut("custom")
+            .unwrap()
+            .base_url = "https://relay.example.com/v1".into();
+        sync_builtin_presets(&mut app);
+        assert_eq!(
+            app.providers.get("custom").unwrap().base_url,
+            "https://relay.example.com/v1"
+        );
+    }
 
     #[test]
     fn sync_adds_minimax_to_legacy_config() {

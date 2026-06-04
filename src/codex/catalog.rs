@@ -197,7 +197,7 @@ fn patch_variant_metadata(
                 format!("{} · {}", variant.display_name, provider.name).into(),
             );
         }
-        let priority = if provider.id == "deepseek" && variant.slug == "deepseek-v4-flash" {
+        let priority = if provider.id == "deepseek" && variant.slug == "deepseek-v4-pro" {
             1000
         } else if variant.context_window >= 1_000_000 {
             200
