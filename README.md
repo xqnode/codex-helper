@@ -62,15 +62,14 @@
 
 ### 第 1 步：下载安装
 
-去 [Releases 页面](https://github.com/xqnode/codex-helper/releases) 下载：
+去 [Releases 页面](https://github.com/xqnode/codex-helper/releases) 下载（**目前仅 Windows**）：
 
-| 系统 | 文件 | 操作 |
+| 类型 | 文件 | 操作 |
 |------|------|------|
-| **Windows** | `CodexHelper-Setup-x.x.x.exe` | 双击 → 一路下一步 |
-| **macOS** | `CodexHelper-x.x.x.dmg` | 拖到「应用程序」 |
-| **Linux** | `CodexHelper-x.x.x.AppImage` | 双击运行 |
+| **安装版** | `CodexHelper-x.x.x-Setup.exe` | 双击 → 一路下一步 |
+| **便携版** | `CodexHelper-x.x.x-win64.zip` | 解压后双击 `codex-helper.exe` |
 
-> 安装时会自动：开机启动、写入 Codex 配置、注册系统托盘图标。
+> macOS / Linux 安装包尚未发布（托盘与设置窗口目前仅支持 Windows）。安装版会自动：可选开机启动、写入 Codex 配置、注册系统托盘。
 
 ### 第 2 步：填 API Key（首次启动自动弹出）
 
@@ -237,7 +236,7 @@ CLI 和托盘共享同一个后端，命令立即反映到托盘图标。
 
 ## 卸载也很干净
 
-Windows 控制面板卸载 / macOS 拖到废纸篓，自动：
+Windows「设置 → 应用」卸载，或运行安装目录下的卸载程序，将：
 
 - ✅ 还原 `~/.codex/config.toml` 到安装前状态（从备份）
 - ✅ 移除开机启动项
@@ -292,7 +291,7 @@ Windows 控制面板卸载 / macOS 拖到废纸篓，自动：
 - **托盘**：`tray-icon` + `tao`（无需 Electron/Tauri 全套）
 - **设置窗口**：原生 webview（仅在打开时加载，~3MB）
 - **代理**：`hyper` + `tokio`
-- **打包**：Windows Inno Setup / macOS dmg / Linux AppImage
+- **打包**：Windows Inno Setup + 便携 zip（macOS dmg / Linux AppImage 规划中）
 
 预计单文件 < 10MB，内存占用 < 30MB。
 

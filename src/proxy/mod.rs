@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock as StdRwLock};
 
 use axum::{
     body::Body,
@@ -26,11 +26,14 @@ use crate::request_log::{
 };
 use crate::settings::{brand_icon_svg, settings_bootstrap, settings_clear_all, settings_page, settings_save, settings_test};
 
+type TrayHealthCheckHook = Arc<dyn Fn() + Send + Sync>;
+
 #[derive(Clone)]
 pub struct ProxyState {
     pub config: Arc<RwLock<AppConfig>>,
     pub client: Client,
     pub request_log: RequestLogStore,
+    tray_health_check: Arc<StdRwLock<Option<TrayHealthCheckHook>>>,
 }
 
 pub fn spawn_server(config: AppConfig) -> anyhow::Result<Arc<ProxyState>> {
@@ -39,6 +42,7 @@ pub fn spawn_server(config: AppConfig) -> anyhow::Result<Arc<ProxyState>> {
         client: config::build_upstream_client(std::time::Duration::from_secs(300))
             .expect("failed to build HTTP client"),
         request_log: RequestLogStore::new(),
+        tray_health_check: Arc::new(StdRwLock::new(None)),
     });
     let addr = format!("{}:{}", config.proxy.host, config.proxy.port);
     let serve_state = state.clone();
@@ -76,12 +80,31 @@ pub async fn reload_config_in_state(state: &ProxyState) -> anyhow::Result<AppCon
     Ok(app)
 }
 
+/// 托盘启动后注册；设置页保存 Key 后自动触发连接检测并刷新菜单。
+pub fn register_tray_health_check(state: &Arc<ProxyState>, hook: TrayHealthCheckHook) {
+    if let Ok(mut slot) = state.tray_health_check.write() {
+        *slot = Some(hook);
+    }
+}
+
+pub fn request_tray_health_check(state: &ProxyState) {
+    let hook = state
+        .tray_health_check
+        .read()
+        .ok()
+        .and_then(|slot| slot.clone());
+    if let Some(hook) = hook {
+        hook();
+    }
+}
+
 pub async fn start_server(config: AppConfig) -> anyhow::Result<()> {
     let addr = format!("{}:{}", config.proxy.host, config.proxy.port);
     let state = ProxyState {
         config: Arc::new(RwLock::new(config.clone())),
         client: config::build_upstream_client(std::time::Duration::from_secs(300))?,
         request_log: RequestLogStore::new(),
+        tray_health_check: Arc::new(StdRwLock::new(None)),
     };
     run_listener(Arc::new(state), &addr).await
 }

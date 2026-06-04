@@ -76,6 +76,16 @@ pub async fn run_with_proxy(app: AppConfig) -> anyhow::Result<()> {
     let event_loop = builder.build();
     let loop_proxy = event_loop.create_proxy();
 
+    proxy::register_tray_health_check(
+        &proxy,
+        Arc::new({
+            let loop_proxy = loop_proxy.clone();
+            move || {
+                let _ = loop_proxy.send_event(TrayUserEvent::CheckHealth);
+            }
+        }),
+    );
+
     let menu = build_menu(&app, &ProviderHealth::default())?;
     let tray = TrayIconBuilder::new()
         .with_icon(crate::icon::tray_icon())

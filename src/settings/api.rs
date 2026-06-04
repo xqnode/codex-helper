@@ -6,7 +6,7 @@ use serde::Deserialize;
 use crate::codex;
 use crate::config::{self, AppConfig};
 use crate::provider;
-use crate::proxy::{reload_config_in_state, ProxyState};
+use crate::proxy::{reload_config_in_state, request_tray_health_check, ProxyState};
 use crate::settings;
 
 const SETTINGS_HTML: &str = include_str!("page.html");
@@ -189,6 +189,7 @@ async fn clear_all_settings(state: &ProxyState) -> anyhow::Result<String> {
     codex::inject_proxy_config(&app)?;
     reload_config_in_state(state).await?;
     state.request_log.clear().await;
+    request_tray_health_check(state);
     Ok(
         "已清除所有 Helper 配置（API Key、厂商选择、中转站地址）。请重新填写 Key 并重启 Codex Desktop。"
             .into(),
@@ -221,6 +222,7 @@ async fn save_api_key(
 
     codex::inject_proxy_config(&app)?;
     reload_config_in_state(state).await?;
+    request_tray_health_check(state);
 
     Ok(format!(
         "已保存 {} 配置。请完全退出并重新打开 Codex Desktop。",
