@@ -32,6 +32,30 @@ pub fn menu_tag(provider: &crate::config::ProviderConfig) -> Option<&'static str
     find_model(&provider.id, &provider.default_model).map(|m| m.menu_tag)
 }
 
+/// 托盘菜单用，如 1M、256K。
+pub fn format_context_window(tokens: u32) -> String {
+    if tokens >= 1_000_000 && tokens % 1_000_000 == 0 {
+        format!("{}M", tokens / 1_000_000)
+    } else if tokens >= 1_000 && tokens % 1_000 == 0 {
+        format!("{}K", tokens / 1_000)
+    } else {
+        tokens.to_string()
+    }
+}
+
+pub fn tray_model_label(model: &ModelVariant, active: bool) -> String {
+    let label = format!(
+        "{} · {}",
+        model.display_name,
+        format_context_window(model.context_window)
+    );
+    if active {
+        format!("✓ {label}")
+    } else {
+        label
+    }
+}
+
 const DEEPSEEK_MODELS: &[ModelVariant] = &[
     ModelVariant {
         slug: "deepseek-v4-pro",
@@ -240,6 +264,24 @@ mod tests {
     fn menu_tags_are_defined_for_core_models() {
         assert_eq!(find_model("deepseek", "deepseek-v4-pro").unwrap().menu_tag, "pro");
         assert_eq!(find_model("qwen", "qwen3.7-plus").unwrap().menu_tag, "plus");
+    }
+
+    #[test]
+    fn tray_model_label_includes_context() {
+        let model = find_model("deepseek", "deepseek-v4-flash").unwrap();
+        assert_eq!(
+            tray_model_label(model, true),
+            "✓ DeepSeek V4 Flash · 1M"
+        );
+        let glm = find_model("zhipu", "glm-5.1").unwrap();
+        assert_eq!(tray_model_label(glm, false), "GLM-5.1（旗舰） · 200K");
+    }
+
+    #[test]
+    fn format_context_window_labels() {
+        assert_eq!(format_context_window(1_000_000), "1M");
+        assert_eq!(format_context_window(256_000), "256K");
+        assert_eq!(format_context_window(128_000), "128K");
     }
 
     #[test]

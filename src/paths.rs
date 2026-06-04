@@ -42,6 +42,10 @@ pub fn helper_logs_dir() -> anyhow::Result<PathBuf> {
     Ok(helper_dir()?.join("logs"))
 }
 
+pub fn helper_request_log_path() -> anyhow::Result<PathBuf> {
+    Ok(helper_dir()?.join("request-log.sqlite"))
+}
+
 pub fn codex_home_dir() -> anyhow::Result<PathBuf> {
     std::env::var("CODEX_HOME")
         .ok()

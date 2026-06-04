@@ -53,9 +53,9 @@ fn create_logs_window<T>(
     let window = WindowBuilder::new()
         .with_title("Codex Helper · 请求日志")
         .with_window_icon(Some(crate::icon::window_icon()))
-        .with_inner_size(tao::dpi::LogicalSize::new(720.0, 520.0))
+        .with_inner_size(tao::dpi::LogicalSize::new(1020.0, 580.0))
         .with_resizable(true)
-        .with_min_inner_size(tao::dpi::LogicalSize::new(560.0, 360.0))
+        .with_min_inner_size(tao::dpi::LogicalSize::new(860.0, 400.0))
         .build(elwt)?;
 
     center_on_screen(&window);

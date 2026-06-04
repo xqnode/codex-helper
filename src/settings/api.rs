@@ -1,5 +1,6 @@
 use axum::extract::State;
 use axum::response::{Html, IntoResponse, Json};
+use axum::http::{header, HeaderMap, HeaderValue};
 use serde::Deserialize;
 
 use crate::codex;
@@ -9,16 +10,30 @@ use crate::proxy::{reload_config_in_state, ProxyState};
 use crate::settings;
 
 const SETTINGS_HTML: &str = include_str!("page.html");
+const BRAND_ICON_SVG: &str = include_str!("../../assets/brand-icon.svg");
+
+pub async fn settings_page() -> Html<&'static str> {
+    Html(SETTINGS_HTML)
+}
+
+pub async fn brand_icon_svg() -> impl IntoResponse {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("image/svg+xml; charset=utf-8"),
+    );
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=86400"),
+    );
+    (headers, BRAND_ICON_SVG)
+}
 
 fn mask_key_preview(key: &str) -> String {
     if key.len() <= 8 {
         return "***".into();
     }
     format!("{}...{}", &key[..4], &key[key.len() - 4..])
-}
-
-pub async fn settings_page() -> Html<&'static str> {
-    Html(SETTINGS_HTML)
 }
 
 pub async fn settings_bootstrap() -> impl IntoResponse {
@@ -152,6 +167,32 @@ pub async fn settings_test(Json(body): Json<SettingsTestBody>) -> impl IntoRespo
         }))
         .into_response(),
     }
+}
+
+pub async fn settings_clear_all(State(state): State<ProxyState>) -> impl IntoResponse {
+    match clear_all_settings(&state).await {
+        Ok(message) => Json(serde_json::json!({
+            "ok": true,
+            "message": message,
+        }))
+        .into_response(),
+        Err(err) => Json(serde_json::json!({
+            "ok": false,
+            "message": format!("{err:#}"),
+        }))
+        .into_response(),
+    }
+}
+
+async fn clear_all_settings(state: &ProxyState) -> anyhow::Result<String> {
+    let app = AppConfig::clear_all_settings()?;
+    codex::inject_proxy_config(&app)?;
+    reload_config_in_state(state).await?;
+    state.request_log.clear().await;
+    Ok(
+        "已清除所有 Helper 配置（API Key、厂商选择、中转站地址）。请重新填写 Key 并重启 Codex Desktop。"
+            .into(),
+    )
 }
 
 async fn save_api_key(

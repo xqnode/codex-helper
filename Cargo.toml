@@ -30,6 +30,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
 
+[build-dependencies]
+ico = "0.3"
+winres = "0.1"
+
 [target.'cfg(windows)'.dependencies]
 tray-icon = "0.21"
 tao = { version = "0.34", default-features = false, features = ["rwh_06"] }

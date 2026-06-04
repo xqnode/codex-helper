@@ -6,6 +6,11 @@ use serde::Serialize;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+mod db;
+use db::RequestLogDb;
+
+use crate::paths;
+
 const MAX_ENTRIES: usize = 300;
 
 #[derive(Clone, Debug, Serialize)]
@@ -49,20 +54,42 @@ pub struct UsageSnapshot {
 #[derive(Clone)]
 pub struct RequestLogStore {
     inner: Arc<RwLock<VecDeque<RequestLogEntry>>>,
+    db: Option<Arc<RequestLogDb>>,
 }
 
 impl RequestLogStore {
     pub fn new() -> Self {
+        let db = open_request_log_db();
+        let mut entries = VecDeque::with_capacity(64);
+        if let Some(db) = &db {
+            match db.load_recent(MAX_ENTRIES) {
+                Ok(loaded) => {
+                    tracing::info!("已加载 {} 条历史请求日志", loaded.len());
+                    entries = loaded.into_iter().collect();
+                }
+                Err(err) => tracing::warn!("加载请求日志失败: {err:#}"),
+            }
+        }
         Self {
-            inner: Arc::new(RwLock::new(VecDeque::with_capacity(64))),
+            inner: Arc::new(RwLock::new(entries)),
+            db,
         }
     }
 
     pub async fn push(&self, entry: RequestLogEntry) {
-        let mut entries = self.inner.write().await;
-        entries.push_back(entry);
-        while entries.len() > MAX_ENTRIES {
-            entries.pop_front();
+        {
+            let mut entries = self.inner.write().await;
+            entries.push_back(entry.clone());
+            while entries.len() > MAX_ENTRIES {
+                entries.pop_front();
+            }
+        }
+        if let Some(db) = &self.db {
+            if let Err(err) = db.insert(&entry) {
+                tracing::warn!("写入请求日志失败: {err:#}");
+            } else if let Err(err) = db.trim(MAX_ENTRIES) {
+                tracing::warn!("裁剪请求日志失败: {err:#}");
+            }
         }
     }
 
@@ -73,6 +100,11 @@ impl RequestLogStore {
 
     pub async fn clear(&self) {
         self.inner.write().await.clear();
+        if let Some(db) = &self.db {
+            if let Err(err) = db.clear() {
+                tracing::warn!("清空请求日志文件失败: {err:#}");
+            }
+        }
     }
 
     pub async fn summary(&self) -> RequestLogSummary {
@@ -199,6 +231,17 @@ fn parse_usage_object(usage: &serde_json::Value) -> Option<UsageSnapshot> {
         output_tokens,
         total_tokens,
     })
+}
+
+fn open_request_log_db() -> Option<Arc<RequestLogDb>> {
+    let path = paths::helper_request_log_path().ok()?;
+    match RequestLogDb::open(&path) {
+        Ok(db) => Some(Arc::new(db)),
+        Err(err) => {
+            tracing::warn!("无法打开请求日志数据库 {}: {err:#}", path.display());
+            None
+        }
+    }
 }
 
 /// 公开价估算（元 / 百万 tokens），未知模型返回 None。

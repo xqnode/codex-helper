@@ -5,7 +5,7 @@ mod api;
 #[cfg(windows)]
 mod window;
 
-pub use api::{settings_bootstrap, settings_page, settings_save, settings_test, test_api_key};
+pub use api::{brand_icon_svg, settings_bootstrap, settings_clear_all, settings_page, settings_save, settings_test, test_api_key};
 
 #[cfg(windows)]
 pub use window::{

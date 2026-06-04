@@ -140,6 +140,21 @@ impl AppConfig {
         write_atomic(&path, &raw)
     }
 
+    /// 清除 Helper 本地配置：重置厂商/模型/中转站，删除所有 API Key；保留当前代理端口以免运行中实例失效。
+    pub fn clear_all_settings() -> anyhow::Result<Self> {
+        let current = Self::load().unwrap_or_default();
+        let mut app = Self::default();
+        app.proxy.host = current.proxy.host.clone();
+        app.proxy.port = current.proxy.port;
+        app.save()?;
+
+        let env_path = paths::helper_env_path()?;
+        if env_path.exists() {
+            std::fs::remove_file(env_path)?;
+        }
+        Ok(app)
+    }
+
     pub fn active_provider(&self) -> anyhow::Result<&ProviderConfig> {
         self.providers
             .get(&self.active)

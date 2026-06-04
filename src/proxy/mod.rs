@@ -24,7 +24,7 @@ use crate::logs::{logs_bootstrap, logs_clear, logs_page};
 use crate::request_log::{
     extract_model_from_body, parse_usage_from_json, PendingRequest, RequestLogStore,
 };
-use crate::settings::{settings_bootstrap, settings_page, settings_save, settings_test};
+use crate::settings::{brand_icon_svg, settings_bootstrap, settings_clear_all, settings_page, settings_save, settings_test};
 
 #[derive(Clone)]
 pub struct ProxyState {
@@ -91,8 +91,10 @@ async fn run_listener(state: Arc<ProxyState>, addr: &str) -> anyhow::Result<()> 
         .route("/health", get(health))
         .route("/admin/reload", post(admin_reload))
         .route("/admin/settings", get(settings_page))
+        .route("/admin/brand-icon.svg", get(brand_icon_svg))
         .route("/admin/settings/bootstrap", get(settings_bootstrap))
         .route("/admin/settings/save", post(settings_save))
+        .route("/admin/settings/clear-all", post(settings_clear_all))
         .route("/admin/settings/test", post(settings_test))
         .route("/admin/logs", get(logs_page))
         .route("/admin/logs/bootstrap", get(logs_bootstrap))
