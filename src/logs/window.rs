@@ -62,6 +62,7 @@ fn create_logs_window<T>(
 
     let url = format!("http://127.0.0.1:{proxy_port}/admin/logs");
     let webview = WebViewBuilder::new().with_url(&url).build(&window)?;
+    crate::icon::apply_window_icon(&window);
 
     Ok(LogsWindow {
         window,

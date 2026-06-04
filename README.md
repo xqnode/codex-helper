@@ -13,6 +13,10 @@
 
 ![系统托盘菜单](assets/tray-menu.png)
 
+托盘 →「设置…」打开 API Key 配置窗口（厂商 Chip 切换、Base URL、测试连接）：
+
+![设置窗口](assets/settings-window.png)
+
 ---
 
 ## 这是给谁用的？
@@ -267,45 +271,6 @@ Windows 控制面板卸载 / macOS 拖到废纸篓，自动：
 
 ---
 
-## 常见问题
-
-**Q：装上后 Codex 怎么没反应？**
-A：检查托盘是否有 ⚡ 图标。若没有，开始菜单搜索「Codex Helper」启动一次。
-
-**Q：可以同时用 OpenAI 官方和 DeepSeek 吗？**
-A：可以。托盘菜单顶部有「OpenAI 官方」选项，切换即可。
-
-**Q：会不会偷我的 API Key？**
-A：源代码开源，Key 加密存于本地，请求只发往你选的官方端点。可用 Wireshark 抓包验证。
-
-**Q：付费吗？**
-A：完全免费，MIT 协议。模型 API 费用付给模型厂商。
-
-<a id="faq-model-switch"></a>
-
-**Q：切换模型需要重启 Codex 吗？**
-
-**Codex Helper 本身不用重启**，托盘切换后代理会一直运行。
-
-| 操作 | 需要重启 Codex？ |
-|------|------------------|
-| 托盘切换厂商（DeepSeek → 千问 等） | 通常**不需要**，新开一条对话即可 |
-| 设置里改具体型号或 API Key | **建议**完全退出并重新打开 Codex Desktop |
-| 切换后仍不对 | 完全退出 Desktop 再打开，或托盘 →「重新同步配置」 |
-
-说明：
-
-- **托盘切换厂商**：会立刻热更新代理、写入 `~/.codex/config.toml`、同步模型目录和 Desktop 会话库，下一条消息即走新厂商。
-- **设置里改型号**（如 V4 Flash → V4 Pro）：保存后配置已更新，但 Desktop 可能缓存旧 UI，因此建议重启。
-- **在 Codex 里点选模型**：选项来自 Helper 写入的目录，但**实际调用以 Helper 当前配置为准**；改型号请走 **托盘 → 设置… → 保存**。
-
-若切换后没生效：先在 Codex 里**新开对话**试一次；仍不对则**完全退出 Codex Desktop**（任务栏右键退出，不要只关窗口）。
-
-**Q：支持代理 (proxy) 吗？**
-A：设置中可填系统代理或 HTTP 代理。
-
----
-
 ## 开发路线
 
 | 阶段 | 目标 | 状态 |
@@ -347,6 +312,82 @@ A：设置中可填系统代理或 HTTP 代理。
 - 新模型预设（附 base_url + 测试通过截图）
 - 中文报错文案优化
 - 小白用户的反馈（你卡在哪一步了？）
+
+---
+
+## 常见问题
+
+**Q：装上后 Codex 怎么没反应？**
+A：看任务栏右下角是否有 Codex Helper 托盘图标（圆角蓝底 + 金色闪电）。没有的话，开始菜单搜「Codex Helper」启动一次；便携版请双击 `codex-helper.exe`（会自动启动托盘）。
+
+**Q：便携版 zip 解压后双击 exe 没反应？**
+A：新版已支持双击直接启动。若仍无托盘，在 PowerShell 进入解压目录执行：
+
+```powershell
+.\codex-helper.exe start
+```
+
+首次使用建议先执行 `.\codex-helper.exe init`，再 `start`。
+
+**Q：安装版和 zip 便携版有什么区别？**
+A：功能相同，都是同一个 `codex-helper.exe`。安装版会写入开始菜单、支持卸载程序，并可选开机自启；zip 解压即用，适合不想装软件的用户。
+
+**Q：升级或重装后，图标还是旧的（蓝色圆形 / 模糊）？**
+A：多半是 **Windows 图标缓存** 没刷新——同一路径反复覆盖安装时，资源管理器和任务栏可能仍显示旧图标，即使 exe 已是新版。安装包结束时会自动执行 `ie4uinit.exe -show`；若仍不对，在 PowerShell 执行：
+
+```powershell
+ie4uinit.exe -show
+taskkill /IM explorer.exe /F; start explorer.exe
+```
+
+仍无效可**注销或重启电脑**。正确图标应为**圆角蓝底渐变 + 金色闪电**（与设置页左上角一致）。
+
+**Q：设置窗口打不开？**
+A：需先启动托盘代理。托盘 →「设置…」，或先运行 `codex-helper start`，再执行 `codex-helper settings`。若提示端口占用，说明已有实例在跑，在任务栏找到托盘图标即可。
+
+**Q：任务管理器里有两个 `codex-helper.exe`？**
+A：可能同时跑了**安装版 + zip 便携版**，或旧开机自启路径未删。任务管理器 → 右键 → 打开文件所在位置，保留一份即可；检查 `shell:startup` 里是否有多余快捷方式。
+
+**Q：下载后 Windows 提示「已保护你的电脑」？**
+A：安装包未数字签名，属正常情况。点「更多信息」→「仍要运行」。仅建议从 [GitHub Releases](https://github.com/xqnode/codex-helper/releases) 下载。
+
+**Q：可以同时用 OpenAI 官方和 DeepSeek 吗？**
+A：可以。托盘 → 更多 →「切换回 OpenAI 官方」，或 CLI 执行 `codex-helper restore-openai`。
+
+**Q：如何清除所有配置？**
+A：托盘 → 设置 → 右上角「清除所有配置」。会删除 API Key、厂商选择与请求日志；之后需重新填 Key 并重启 Codex Desktop。
+
+**Q：切换模型需要重启 Codex 吗？**
+
+<a id="faq-model-switch"></a>
+
+**Codex Helper 本身不用重启**，托盘切换后代理会一直运行。
+
+| 操作 | 需要重启 Codex？ |
+|------|------------------|
+| 托盘切换厂商（DeepSeek → 千问 等） | 通常**不需要**，新开一条对话即可 |
+| 设置里改具体型号或 API Key | **建议**完全退出并重新打开 Codex Desktop |
+| 切换后仍不对 | 完全退出 Desktop 再打开，或托盘 →「重新同步配置」 |
+
+说明：
+
+- **托盘切换厂商**：会立刻热更新代理、写入 `~/.codex/config.toml`、同步模型目录和 Desktop 会话库，下一条消息即走新厂商。
+- **设置里改型号**（如 V4 Flash → V4 Pro）：保存后配置已更新，但 Desktop 可能缓存旧 UI，因此建议重启。
+- **在 Codex 里点选模型**：选项来自 Helper 写入的目录，但**实际调用以 Helper 当前配置为准**；改型号请走 **托盘 → 设置… → 保存**。
+
+若切换后没生效：先在 Codex 里**新开对话**试一次；仍不对则**完全退出 Codex Desktop**（任务栏右键退出，不要只关窗口）。
+
+**Q：中转站 Base URL 怎么填？**
+A：填 OpenAI 兼容网关地址，需带 `/v1`，例如 `http://your-host:8080/v1`。官方厂商的 Base URL 在设置里只读，无需修改。
+
+**Q：一键诊断怎么用？**
+A：PowerShell 或 cmd 执行 `codex-helper doctor`，会检查配置目录、Codex 配置、API Key、环境变量与代理是否在运行。
+
+**Q：会不会偷我的 API Key？**
+A：源代码开源，Key 存于本地 `%USERPROFILE%\.codex-helper\`，请求只发往你选的官方端点。
+
+**Q：付费吗？**
+A：完全免费，MIT 协议。模型 API 费用付给各模型厂商。
 
 ---
 

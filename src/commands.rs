@@ -8,7 +8,8 @@ use crate::provider;
 use crate::proxy;
 
 pub async fn run(cli: Cli) -> anyhow::Result<()> {
-    match cli.command {
+    let command = cli.command.unwrap_or(default_command());
+    match command {
         Commands::Init => cmd_init().await,
         Commands::Start { no_tray } => cmd_start(no_tray).await,
         Commands::Status => cmd_status(),
@@ -19,6 +20,17 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         Commands::Settings => cmd_settings().await,
         Commands::Env { action } => cmd_env(action),
         Commands::RestoreOpenai => cmd_restore_openai(),
+    }
+}
+
+fn default_command() -> Commands {
+    #[cfg(windows)]
+    {
+        Commands::Start { no_tray: false }
+    }
+    #[cfg(not(windows))]
+    {
+        Commands::Start { no_tray: true }
     }
 }
 

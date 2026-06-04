@@ -12,8 +12,8 @@ use crate::settings;
 const SETTINGS_HTML: &str = include_str!("page.html");
 const BRAND_ICON_SVG: &str = include_str!("../../assets/brand-icon.svg");
 
-pub async fn settings_page() -> Html<&'static str> {
-    Html(SETTINGS_HTML)
+pub async fn settings_page() -> Html<String> {
+    Html(SETTINGS_HTML.replace("<!--BRAND_ICON-->", BRAND_ICON_SVG.trim()))
 }
 
 pub async fn brand_icon_svg() -> impl IntoResponse {

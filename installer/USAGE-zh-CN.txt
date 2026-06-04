@@ -7,9 +7,7 @@ Codex Helper — 让 Codex 使用 DeepSeek / 千问 / 智谱 / Kimi / MiniMax
 
 【绿色版 · 首次使用】
   1. 解压本 zip 到任意目录（路径尽量不要含中文空格）
-  2. 打开 PowerShell，进入该目录，执行：
-       .\codex-helper.exe init
-       .\codex-helper.exe start
+  2. 双击 codex-helper.exe 启动（首次使用也可先执行：.\codex-helper.exe init）
   3. 看任务栏托盘出现 Codex Helper 图标
   4. 右键托盘 →「设置…」→ 选厂商、填 API Key → 保存
   5. 完全退出并重新打开 Codex Desktop

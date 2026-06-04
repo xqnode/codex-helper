@@ -21,6 +21,8 @@ fn main() {
     res.set("ProductName", "Codex Helper");
     res.set("FileDescription", "Codex Helper");
     res.set("LegalCopyright", "Codex Helper");
+    res.set("FileVersion", env!("CARGO_PKG_VERSION"));
+    res.set("ProductVersion", env!("CARGO_PKG_VERSION"));
     res.compile().expect("compile windows resources");
 }
 
@@ -30,7 +32,7 @@ fn main() {}
 #[cfg(windows)]
 fn generate_icon_dir_bytes() -> Vec<u8> {
     let mut icon_dir = ico::IconDir::new(ico::ResourceType::Icon);
-    for size in [16u32, 32, 48, 128, 256] {
+    for size in [16u32, 24, 32, 48, 64, 128, 256] {
         let rgba = icon_render::render_icon_rgba(size);
         let image = ico::IconImage::from_rgba_data(size, size, rgba);
         icon_dir

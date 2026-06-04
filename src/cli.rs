@@ -7,8 +7,9 @@ use clap::{Parser, Subcommand};
     version
 )]
 pub struct Cli {
+    /// 省略子命令时，Windows 默认执行 start（启动托盘与代理）
     #[command(subcommand)]
-    pub command: Commands,
+    pub command: Option<Commands>,
 }
 
 #[derive(Subcommand, Debug)]

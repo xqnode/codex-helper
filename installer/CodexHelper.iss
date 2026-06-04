@@ -53,6 +53,7 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameter
 Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "start"; Tasks: startup
 
 [Run]
+Filename: "{cmd}"; Parameters: "/C ie4uinit.exe -show"; Flags: runhidden nowait
 Filename: "{app}\{#MyAppExeName}"; Parameters: "init"; StatusMsg: "正在初始化 Codex 配置…"; Flags: runhidden waituntilterminated postinstall
 Filename: "{app}\{#MyAppExeName}"; Parameters: "start"; Description: "启动 {#MyAppName}"; Flags: runhidden nowait postinstall skipifsilent
 
