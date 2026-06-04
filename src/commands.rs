@@ -279,7 +279,10 @@ async fn cmd_doctor() -> anyhow::Result<()> {
                     "❌ Codex config.toml 代理地址不一致: {url} ≠ {}",
                     app.proxy_base_url()
                 );
-                println!("   运行 codex-helper init 或托盘「重新同步 Codex 配置」");
+                println!(
+                    "   期望端口 {}，请托盘「重新同步配置」后完全退出并重启 Codex Desktop",
+                    config::DEFAULT_PORT
+                );
                 ok = false;
             }
             Err(_) => {
@@ -301,6 +304,24 @@ async fn cmd_doctor() -> anyhow::Result<()> {
             }
             Err(_) => {}
         }
+    }
+
+    match codex::read_js_repl_enabled() {
+        Ok(true) => println!("✅ Codex config.toml 已启用 js_repl（Computer Use / Browser Use 需要）"),
+        Ok(false) => {
+            println!("⚠️  Codex config.toml 中 js_repl = false，Computer Use 会报 Node REPL 不可用");
+            println!("   托盘 → 重新同步配置，然后完全退出并重启 Codex Desktop");
+            ok = false;
+        }
+        Err(_) => {}
+    }
+
+    if codex::read_node_repl_mcp_configured() {
+        println!("✅ Codex 已配置 mcp_servers.node_repl");
+    } else {
+        println!("⚠️  Codex 未配置 mcp_servers.node_repl（Computer Use 依赖 node_repl MCP）");
+        println!("   在 Codex 设置里安装 Computer Use 插件后重启 Desktop，或重新同步配置");
+        ok = false;
     }
 
     let provider = app.active_provider()?;
@@ -325,6 +346,10 @@ async fn cmd_doctor() -> anyhow::Result<()> {
         Ok(resp) if resp.status().is_success() => println!("✅ 本地代理正在运行"),
         _ => {
             println!("⚠️  本地代理未运行，运行: codex-helper start");
+            println!(
+                "   默认代理地址: http://{}:{}/v1 （健康检查 /health）",
+                app.proxy.host, config::DEFAULT_PORT
+            );
             ok = false;
         }
     }

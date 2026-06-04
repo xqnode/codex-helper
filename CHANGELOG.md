@@ -5,6 +5,12 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 变更
+
+- 本地代理默认端口由随机分配改为固定 **25543**，便于排查连接问题并与文档一致
+
 ## [0.1.0] - 2026-06-04
 
 ### 新增
@@ -23,6 +29,7 @@
 
 ### 修复
 
+- 同步 Codex 配置时强制 `[features] js_repl = true`，修复 Computer Use / Browser Use 报「Node REPL 工具不可用」
 - 关闭设置窗口不再导致整个托盘程序退出
 - 模型目录仅展示当前激活厂商的模型；内置 Base URL / 模型 ID 与官网对齐，默认旗舰模型
 - 移除 Codex 配置中的 sandbox/approval 项，避免出现「自定义 (config.toml)」权限模式

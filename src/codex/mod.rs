@@ -24,6 +24,9 @@ pub fn backup_codex_config() -> anyhow::Result<Option<std::path::PathBuf>> {
 pub fn inject_proxy_config(app: &AppConfig) -> anyhow::Result<()> {
     backup_codex_config()?;
     let mut app = app.clone();
+    if app.proxy.port != config::DEFAULT_PORT {
+        app.proxy.port = config::DEFAULT_PORT;
+    }
     sync_provider_presets(&mut app);
     app.save()?;
     catalog::write_model_catalog(&app)?;
@@ -224,6 +227,12 @@ fn render_codex_config(app: &AppConfig, provider: &config::ProviderConfig) -> an
     // 开启后新建对话可能无法生成 rollout 文件，导致「恢复对话失败 / Error submitting message」。
     merged.remove("disable_response_storage");
 
+    // Computer Use / Browser Use 依赖 node_repl MCP，而 node_repl 需要 js_repl 开启。
+    // Codex Desktop 在部分场景（第三方 model_provider、Windows sandbox 失败等）会把
+    // js_repl 写回 false；helper 每次同步配置时强制打开，避免 $computer-use 报
+    //「Node REPL 工具不可用」。
+    ensure_desktop_automation_features(&mut merged);
+
     // 勿写入 sandbox_mode / windows.sandbox / approval_policy：
     // Codex Desktop 会因此出现「自定义 (config.toml)」权限项。
     merged.remove("sandbox_mode");
@@ -300,6 +309,40 @@ fn verify_written_proxy_url(content: &str, expected: &str) -> anyhow::Result<()>
     Ok(())
 }
 
+fn ensure_desktop_automation_features(merged: &mut Map<String, toml::Value>) {
+    let mut features = merged
+        .remove("features")
+        .and_then(|value| value.as_table().cloned())
+        .unwrap_or_default();
+    for (key, enabled) in [("js_repl", true), ("plugins", true), ("apps", true)] {
+        features.insert(key.into(), toml::Value::Boolean(enabled));
+    }
+    merged.insert("features".into(), toml::Value::Table(features));
+}
+
+pub fn read_js_repl_enabled() -> anyhow::Result<bool> {
+    let table = load_existing_table()?;
+    Ok(table
+        .get("features")
+        .and_then(|value| value.get("js_repl"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false))
+}
+
+pub fn read_node_repl_mcp_configured() -> bool {
+    load_existing_table()
+        .ok()
+        .and_then(|table| {
+            table
+                .get("mcp_servers")
+                .and_then(|value| value.get("node_repl"))
+                .and_then(|value| value.get("command"))
+                .and_then(|value| value.as_str())
+                .map(str::to_string)
+        })
+        .is_some_and(|command| !command.is_empty())
+}
+
 fn load_existing_table() -> anyhow::Result<Map<String, toml::Value>> {
     let path = paths::codex_config_path()?;
     if !path.exists() {
@@ -335,7 +378,35 @@ mod tests {
     fn normalize_proxy_url_strips_trailing_slash() {
         assert_eq!(
             normalize_proxy_url("http://127.0.0.1:25543/v1/"),
-            "http://127.0.0.1:25543/v1"
+            normalize_proxy_url(&format!("http://127.0.0.1:{}:{}/v1/", config::DEFAULT_HOST, config::DEFAULT_PORT))
+        );
+    }
+
+    #[test]
+    fn ensure_js_repl_enabled_overrides_false_and_preserves_other_flags() {
+        let mut merged = Map::new();
+        let mut features = Map::new();
+        features.insert("js_repl".into(), toml::Value::Boolean(false));
+        features.insert("plugins".into(), toml::Value::Boolean(true));
+        merged.insert("features".into(), toml::Value::Table(features));
+
+        ensure_desktop_automation_features(&mut merged);
+
+        let features = merged
+            .get("features")
+            .and_then(|value| value.as_table())
+            .expect("features table");
+        assert_eq!(
+            features.get("js_repl").and_then(|value| value.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            features.get("plugins").and_then(|value| value.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            features.get("apps").and_then(|value| value.as_bool()),
+            Some(true)
         );
     }
 

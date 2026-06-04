@@ -9,20 +9,8 @@ pub const PROVIDER_ID: &str = "codex-helper";
 pub const CC_SWITCH_CODEX_PROVIDER_ID: &str = "custom";
 pub const DUMMY_ENV_KEY: &str = "CODEX_HELPER_DUMMY_KEY";
 pub const DEFAULT_HOST: &str = "127.0.0.1";
-pub const PORT_MIN: u16 = 10000;
-pub const PORT_MAX: u16 = 65535;
-
-/// 生成 10000-65535 范围内的随机 5 位端口
-pub fn random_five_digit_port() -> u16 {
-    use std::hash::{Hash, Hasher};
-    use std::collections::hash_map::DefaultHasher;
-
-    let mut hasher = DefaultHasher::new();
-    std::time::SystemTime::now().hash(&mut hasher);
-    std::process::id().hash(&mut hasher);
-    let hash = hasher.finish();
-    PORT_MIN + (hash as u32 % (PORT_MAX as u32 - PORT_MIN as u32 + 1)) as u16
-}
+/// 本地代理固定端口；Codex Desktop 通过 http://127.0.0.1:25543/v1 访问 Helper。
+pub const DEFAULT_PORT: u16 = 25543;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProxyConfig {
@@ -34,7 +22,7 @@ impl Default for ProxyConfig {
     fn default() -> Self {
         Self {
             host: DEFAULT_HOST.to_string(),
-            port: random_five_digit_port(),
+            port: DEFAULT_PORT,
         }
     }
 }
@@ -243,4 +231,20 @@ pub fn resolve_api_key(env_key: &str) -> anyhow::Result<String> {
         .cloned()
         .filter(|v| !v.trim().is_empty())
         .ok_or_else(|| anyhow::anyhow!("未找到 API Key，请先运行: codex-helper env set {env_key} <your-key>"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_proxy_uses_fixed_port() {
+        let config = ProxyConfig::default();
+        assert_eq!(config.host, DEFAULT_HOST);
+        assert_eq!(config.port, DEFAULT_PORT);
+        assert_eq!(
+            AppConfig::default().proxy_base_url(),
+            format!("http://{DEFAULT_HOST}:{DEFAULT_PORT}/v1")
+        );
+    }
 }

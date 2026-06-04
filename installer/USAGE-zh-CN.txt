@@ -26,6 +26,11 @@ Codex Helper — 让 Codex 使用 DeepSeek / 千问 / 智谱 / Kimi / MiniMax
   · %USERPROFILE%\.codex-helper\     本工具配置与 Key
   · %USERPROFILE%\.codex\            Codex 配置（工具会自动写入代理）
 
+【本地代理端口】
+  · 固定为 127.0.0.1:25543（Codex 访问 http://127.0.0.1:25543/v1）
+  · 自检：浏览器打开 http://127.0.0.1:25543/health
+  · 若 Codex 连不上：先确认托盘在运行，再托盘 →「重新同步配置」
+
 【卸载绿色版】
   托盘 → 退出；删除解压目录即可。配置在 .codex-helper 里，需手动删。
 
