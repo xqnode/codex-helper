@@ -14,7 +14,7 @@ mod proxy;
 mod request_log;
 mod settings;
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 mod tray;
 
 use clap::Parser;

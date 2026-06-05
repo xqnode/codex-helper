@@ -24,11 +24,11 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
 }
 
 fn default_command() -> Commands {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     {
         Commands::Start { no_tray: false }
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         Commands::Start { no_tray: true }
     }
@@ -51,8 +51,8 @@ async fn cmd_init() -> anyhow::Result<()> {
     println!("   代理地址: {}", app.proxy_base_url());
     println!();
     println!("下一步:");
-    println!("  1. 右键托盘 → 🔑 设置 API Key（或 codex-helper settings）");
-    println!("  2. codex-helper start    # Windows 默认带系统托盘");
+    println!("  1. 菜单栏/托盘 → 设置 API Key（或 codex-helper settings）");
+    println!("  2. codex-helper start    # Windows / macOS 默认带菜单栏托盘");
     println!("  3. 完全退出并重新打开 Codex Desktop（需加载新的环境变量）");
     Ok(())
 }
@@ -89,15 +89,15 @@ async fn cmd_start(no_tray: bool) -> anyhow::Result<()> {
     codex::inject_proxy_config(&app)?;
     let app = AppConfig::load()?;
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     if !no_tray {
         ensure_proxy_port_available(&app).await?;
         return crate::tray::run_with_proxy(app).await;
     }
 
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     if !no_tray {
-        println!("⚠️  系统托盘目前仅支持 Windows，将以 CLI 模式启动代理");
+        println!("⚠️  系统托盘目前仅支持 Windows / macOS，将以 CLI 模式启动代理");
     }
 
     ensure_proxy_port_available(&app).await?;
@@ -200,15 +200,15 @@ async fn cmd_settings() -> anyhow::Result<()> {
 
     match client.get(&health_url).send().await {
         Ok(resp) if resp.status().is_success() => {
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             {
                 crate::settings::open_settings_window(app.proxy.port);
                 println!("✅ 已打开设置窗口");
                 Ok(())
             }
-            #[cfg(not(windows))]
+            #[cfg(not(any(windows, target_os = "macos")))]
             {
-                anyhow::bail!("设置窗口目前仅支持 Windows。请使用: codex-helper env set DEEPSEEK_API_KEY sk-xxx")
+                anyhow::bail!("设置窗口目前仅支持 Windows / macOS。请使用: codex-helper env set DEEPSEEK_API_KEY sk-xxx")
             }
         }
         _ => anyhow::bail!(
@@ -256,6 +256,15 @@ async fn cmd_doctor() -> anyhow::Result<()> {
         ok = false;
     }
 
+    #[cfg(target_os = "macos")]
+    if crate::paths::codex_home_dir()?.join(".env").exists() {
+        println!("✅ ~/.codex/.env 已生成（Codex Desktop 从此读取 API Key）");
+    } else {
+        println!("⚠️  ~/.codex/.env 不存在，请在设置中保存 API Key");
+        ok = false;
+    }
+
+    #[cfg(not(target_os = "macos"))]
     if crate::paths::codex_home_dir()?.join(".env").exists() {
         println!("✅ ~/.codex/.env 已生成");
     }

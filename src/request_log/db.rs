@@ -115,10 +115,11 @@ impl RequestLogDb {
 }
 
 fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<RequestLogEntry> {
+    let time_ms: i64 = row.get(1)?;
     Ok(RequestLogEntry {
         id: row.get(0)?,
-        time_ms: row.get(1)?,
-        time_label: row.get(2)?,
+        time_ms,
+        time_label: super::format_time_label(time_ms),
         provider_id: row.get(3)?,
         provider_name: row.get(4)?,
         model: row.get(5)?,

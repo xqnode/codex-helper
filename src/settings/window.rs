@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopWindowTarget};
 use tao::platform::run_return::EventLoopExtRunReturn;
+#[cfg(windows)]
 use tao::platform::windows::EventLoopBuilderExtWindows;
 use tao::window::{Window, WindowBuilder, WindowId};
 use wry::WebViewBuilder;
@@ -80,6 +81,7 @@ pub fn open_settings_window(proxy_port: u16) {
 
 fn run_standalone_window(proxy_port: u16) -> anyhow::Result<()> {
     let mut builder = EventLoopBuilder::new();
+    #[cfg(windows)]
     builder.with_any_thread(true);
     let mut event_loop = builder.build();
 

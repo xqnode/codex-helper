@@ -60,10 +60,24 @@ pub fn open_codex_dir() -> anyhow::Result<()> {
 }
 
 fn open_in_explorer(path: &std::path::Path) -> anyhow::Result<()> {
-    std::process::Command::new("explorer")
-        .arg(path)
-        .spawn()
-        .map_err(|e| anyhow::anyhow!("无法打开资源管理器: {e}"))?;
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer")
+            .arg(path)
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("无法打开资源管理器: {e}"))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("无法打开 Finder: {e}"))?;
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        anyhow::bail!("当前平台不支持打开文件夹: {}", path.display());
+    }
     Ok(())
 }
 
@@ -83,7 +97,7 @@ pub async fn restore_openai() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// 强制结束 Codex Desktop / CLI 进程（Windows）。
+/// 强制结束 Codex Desktop / CLI 进程。
 pub fn kill_codex_desktop() -> anyhow::Result<()> {
     #[cfg(windows)]
     {
@@ -98,6 +112,13 @@ pub fn kill_codex_desktop() -> anyhow::Result<()> {
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status();
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        for name in ["Codex", "codex"] {
+            let _ = Command::new("pkill").args(["-x", name]).status();
         }
     }
     Ok(())

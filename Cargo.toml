@@ -2,7 +2,7 @@
 name = "codex-helper"
 version = "0.1.0"
 edition = "2021"
-description = "轻量 Windows 托盘代理，让 Codex CLI 一键切换 DeepSeek、通义千问等国产大模型"
+description = "轻量托盘代理，让 Codex CLI 一键切换 DeepSeek、通义千问等国产大模型"
 license = "MIT"
 
 [[bin]]
@@ -35,6 +35,11 @@ ico = "0.3"
 winres = "0.1"
 
 [target.'cfg(windows)'.dependencies]
+tray-icon = "0.21"
+tao = { version = "0.34", default-features = false, features = ["rwh_06"] }
+wry = "0.49"
+
+[target.'cfg(target_os = "macos")'.dependencies]
 tray-icon = "0.21"
 tao = { version = "0.34", default-features = false, features = ["rwh_06"] }
 wry = "0.49"

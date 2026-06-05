@@ -1,36 +1,23 @@
-#[cfg(windows)]
 use std::cell::RefCell;
-#[cfg(windows)]
 use std::rc::Rc;
-#[cfg(windows)]
 use std::sync::Arc;
 
-#[cfg(windows)]
 use tao::event::{Event, StartCause, WindowEvent};
-#[cfg(windows)]
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
 #[cfg(windows)]
 use tao::platform::windows::EventLoopBuilderExtWindows;
-#[cfg(windows)]
 use tokio::sync::RwLock;
-#[cfg(windows)]
 use tray_icon::{
     menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu},
     TrayIcon, TrayIconBuilder,
 };
 
-#[cfg(windows)]
 use crate::actions;
-#[cfg(windows)]
 use crate::config::{self, AppConfig};
-#[cfg(windows)]
-use crate::proxy::{self, ProxyState};
-#[cfg(windows)]
 use crate::logs;
-#[cfg(windows)]
+use crate::proxy::{self, ProxyState};
 use crate::settings;
 
-#[cfg(windows)]
 enum TrayUserEvent {
     RefreshUi,
     OpenSettings,
@@ -38,7 +25,6 @@ enum TrayUserEvent {
     CheckHealth,
 }
 
-#[cfg(windows)]
 #[derive(Clone, Debug)]
 enum ConnectionStatus {
     Unknown,
@@ -48,14 +34,12 @@ enum ConnectionStatus {
     Failed(String),
 }
 
-#[cfg(windows)]
 #[derive(Clone, Debug)]
 struct ProviderHealth {
     provider_id: String,
     connection: ConnectionStatus,
 }
 
-#[cfg(windows)]
 impl Default for ProviderHealth {
     fn default() -> Self {
         Self {
@@ -65,13 +49,13 @@ impl Default for ProviderHealth {
     }
 }
 
-#[cfg(windows)]
 pub async fn run_with_proxy(app: AppConfig) -> anyhow::Result<()> {
     let rt_handle = tokio::runtime::Handle::current();
     let config = Arc::new(RwLock::new(app.clone()));
     let proxy = proxy::spawn_server(app.clone())?;
 
     let mut builder = EventLoopBuilder::<TrayUserEvent>::with_user_event();
+    #[cfg(windows)]
     builder.with_any_thread(true);
     let event_loop = builder.build();
     let loop_proxy = event_loop.create_proxy();
@@ -196,7 +180,6 @@ pub async fn run_with_proxy(app: AppConfig) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(windows)]
 struct TrayContext {
     config: Arc<RwLock<AppConfig>>,
     proxy: Arc<ProxyState>,
@@ -208,13 +191,11 @@ struct TrayContext {
     health: Arc<RwLock<ProviderHealth>>,
 }
 
-#[cfg(windows)]
 struct TrayWorker {
     config: Arc<RwLock<AppConfig>>,
     proxy: Arc<ProxyState>,
 }
 
-#[cfg(windows)]
 fn handle_menu_click(ctx: &Arc<TrayContext>, id: &str) {
     if id == "quit" {
         std::process::exit(0);
@@ -282,7 +263,6 @@ fn handle_menu_click(ctx: &Arc<TrayContext>, id: &str) {
     }
 }
 
-#[cfg(windows)]
 fn spawn_tray_task<F, Fut>(ctx: &Arc<TrayContext>, task: F)
 where
     F: FnOnce(TrayWorker) -> Fut + Send + 'static,
@@ -300,7 +280,6 @@ where
     });
 }
 
-#[cfg(windows)]
 fn start_health_check(ctx: &Arc<TrayContext>) {
     let provider_id = ctx.rt.block_on(async {
         ctx.config.read().await.active.clone()
@@ -321,7 +300,6 @@ fn start_health_check(ctx: &Arc<TrayContext>) {
     });
 }
 
-#[cfg(windows)]
 async fn run_health_check(
     config: Arc<RwLock<AppConfig>>,
     health: Arc<RwLock<ProviderHealth>>,
@@ -378,7 +356,6 @@ async fn run_health_check(
     store_health(&health, &provider.id, connection).await;
 }
 
-#[cfg(windows)]
 async fn store_health(
     health: &Arc<RwLock<ProviderHealth>>,
     provider_id: &str,
@@ -389,7 +366,6 @@ async fn store_health(
     state.connection = connection;
 }
 
-#[cfg(windows)]
 fn refresh_tray_ui(ctx: &Arc<TrayContext>) {
     let app = ctx.rt.block_on(async { ctx.config.read().await.clone() });
     let health = ctx.rt.block_on(async { ctx.health.read().await.clone() });
@@ -400,7 +376,6 @@ fn refresh_tray_ui(ctx: &Arc<TrayContext>) {
     }
 }
 
-#[cfg(windows)]
 fn tooltip_text(app: &AppConfig, health: &ProviderHealth) -> String {
     let name = app
         .active_provider()
@@ -417,7 +392,6 @@ fn tooltip_text(app: &AppConfig, health: &ProviderHealth) -> String {
     format!("Codex Helper — {name}（运行中）")
 }
 
-#[cfg(windows)]
 fn active_key_configured(app: &AppConfig) -> bool {
     app.active_provider()
         .ok()
@@ -425,7 +399,6 @@ fn active_key_configured(app: &AppConfig) -> bool {
         .is_some()
 }
 
-#[cfg(windows)]
 fn format_provider_with_tag(name: &str, provider: &crate::config::ProviderConfig) -> String {
     match crate::provider::models::menu_tag(provider) {
         Some(tag) => format!("{name} · {tag}"),
@@ -433,7 +406,6 @@ fn format_provider_with_tag(name: &str, provider: &crate::config::ProviderConfig
     }
 }
 
-#[cfg(windows)]
 fn menu_key_line(app: &AppConfig) -> String {
     if active_key_configured(app) {
         "√ API Key：已配置".into()
@@ -442,7 +414,6 @@ fn menu_key_line(app: &AppConfig) -> String {
     }
 }
 
-#[cfg(windows)]
 fn menu_connection_line(app: &AppConfig, health: &ProviderHealth) -> String {
     if health.provider_id != app.active {
         return "… 连接：检测中…".into();
@@ -458,7 +429,6 @@ fn menu_connection_line(app: &AppConfig, health: &ProviderHealth) -> String {
     }
 }
 
-#[cfg(windows)]
 fn truncate_menu_text(text: &str, max_chars: usize) -> String {
     if text.chars().count() <= max_chars {
         return text.to_string();
@@ -466,7 +436,6 @@ fn truncate_menu_text(text: &str, max_chars: usize) -> String {
     format!("{}…", text.chars().take(max_chars).collect::<String>())
 }
 
-#[cfg(windows)]
 fn build_menu(app: &AppConfig, health: &ProviderHealth) -> anyhow::Result<Menu> {
     let menu = Menu::new();
     menu.append(&MenuItem::with_id(
@@ -576,9 +545,4 @@ fn build_menu(app: &AppConfig, health: &ProviderHealth) -> anyhow::Result<Menu> 
     menu.append(&PredefinedMenuItem::separator())?;
     menu.append(&MenuItem::with_id("quit", "退出 Codex Helper", true, None))?;
     Ok(menu)
-}
-
-#[cfg(not(windows))]
-pub async fn run_with_proxy(_app: AppConfig) -> anyhow::Result<()> {
-    anyhow::bail!("系统托盘目前仅支持 Windows")
 }

@@ -288,13 +288,34 @@ fn format_cost_yuan(yuan: f64) -> String {
 }
 
 fn format_time_label(time_ms: i64) -> String {
-    let secs = time_ms / 1000;
-    let ms = (time_ms % 1000) as u32;
-    let local = secs % 86400;
-    let h = local / 3600;
-    let m = (local % 3600) / 60;
-    let s = local % 60;
-    format!("{:02}:{:02}:{:02}.{:03}", h, m, s, ms)
+    const BEIJING_OFFSET_SECS: i64 = 8 * 3600;
+    let total_secs = time_ms.div_euclid(1000);
+    let ms = time_ms.rem_euclid(1000).unsigned_abs() as u32;
+    let beijing_secs = total_secs + BEIJING_OFFSET_SECS;
+    let days = beijing_secs.div_euclid(86400);
+    let tod = beijing_secs.rem_euclid(86400);
+    let h = (tod / 3600) as u32;
+    let m = ((tod % 3600) / 60) as u32;
+    let s = (tod % 60) as u32;
+    let (year, month, day) = civil_from_unix_days(days);
+    format!("{year:04}-{month:02}-{day:02} {h:02}:{m:02}:{s:02}.{ms:03}")
+}
+
+/// Unix 纪元日数 → 公历日期（用于北京时间展示）。
+fn civil_from_unix_days(z: i64) -> (i32, u32, u32) {
+    let z = z + 719_468;
+    let era = (if z >= 0 { z } else { z - 146_096 }) / 146_097;
+    let doe = (z - era * 146_097) as u32;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let mut y = yoe as i32 + era as i32 * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    if m <= 2 {
+        y += 1;
+    }
+    (y, m, d)
 }
 
 pub fn extract_model_from_body(body: &[u8], fallback: &str) -> String {
@@ -321,5 +342,13 @@ mod tests {
         let usage = parse_usage_from_bytes(chunk).unwrap();
         assert_eq!(usage.input_tokens, 10);
         assert_eq!(usage.output_tokens, 5);
+    }
+
+    #[test]
+    fn format_time_label_uses_beijing_time() {
+        assert_eq!(format_time_label(0), "1970-01-01 08:00:00.000");
+        assert_eq!(format_time_label(3_600_000), "1970-01-01 09:00:00.000");
+        // 1970-01-01 23:00 UTC → 1970-01-02 07:00 北京时间
+        assert_eq!(format_time_label(82_800_000), "1970-01-02 07:00:00.000");
     }
 }

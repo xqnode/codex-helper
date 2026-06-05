@@ -26,7 +26,13 @@ fn main() {
     res.compile().expect("compile windows resources");
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+fn main() {
+    let assets_dir = std::path::PathBuf::from("assets");
+    std::fs::create_dir_all(&assets_dir).ok();
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn main() {}
 
 #[cfg(windows)]

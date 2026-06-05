@@ -7,7 +7,7 @@ use clap::{Parser, Subcommand};
     version
 )]
 pub struct Cli {
-    /// 省略子命令时，Windows 默认执行 start（启动托盘与代理）
+    /// 省略子命令时，Windows / macOS 默认执行 start（启动托盘与代理）
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
@@ -16,7 +16,7 @@ pub struct Cli {
 pub enum Commands {
     /// 初始化配置并写入 Codex config.toml
     Init,
-    /// 启动本地代理（Windows 默认显示系统托盘）
+    /// 启动本地代理（Windows / macOS 默认显示菜单栏托盘）
     Start {
         #[arg(long, help = "不显示托盘，仅用命令行模式")]
         no_tray: bool,
