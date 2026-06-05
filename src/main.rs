@@ -20,13 +20,34 @@ mod tray;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-#[tokio::main]
-async fn main() {
+fn init_tracing() {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive("codex_helper=warn".parse().unwrap()))
+        .with_env_filter(
+            EnvFilter::from_default_env().add_directive("codex_helper=warn".parse().unwrap()),
+        )
         .with_target(false)
         .init();
+}
 
+/// macOS 菜单栏托盘必须在 OS 主线程创建；#[tokio::main] 会把任务派到 worker 线程。
+#[cfg(target_os = "macos")]
+fn main() {
+    init_tracing();
+    let cli = cli::Cli::parse();
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    if let Err(err) = rt.block_on(commands::run(cli)) {
+        eprintln!("❌ {err:#}");
+        std::process::exit(1);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tokio::main]
+async fn main() {
+    init_tracing();
     let cli = cli::Cli::parse();
     if let Err(err) = commands::run(cli).await {
         eprintln!("❌ {err:#}");

@@ -23,6 +23,7 @@ enum TrayUserEvent {
     OpenSettings,
     OpenLogs,
     CheckHealth,
+    MenuClick(String),
 }
 
 #[derive(Clone, Debug)]
@@ -70,12 +71,8 @@ pub async fn run_with_proxy(app: AppConfig) -> anyhow::Result<()> {
         }),
     );
 
-    let menu = build_menu(&app, &ProviderHealth::default())?;
-    let tray = TrayIconBuilder::new()
-        .with_icon(crate::icon::tray_icon())
-        .with_menu(Box::new(menu.clone()))
-        .with_tooltip(&tooltip_text(&app, &ProviderHealth::default()))
-        .build()?;
+    let app_for_init = app.clone();
+    let tray_slot: Rc<RefCell<Option<TrayIcon>>> = Rc::new(RefCell::new(None));
 
     let settings_slot: Rc<RefCell<Option<settings::SettingsWindow>>> =
         Rc::new(RefCell::new(None));
@@ -84,15 +81,23 @@ pub async fn run_with_proxy(app: AppConfig) -> anyhow::Result<()> {
     let ctx = Arc::new(TrayContext {
         config,
         proxy,
-        tray,
-        loop_proxy,
+        tray: tray_slot.clone(),
+        loop_proxy: loop_proxy.clone(),
         rt: rt_handle,
         settings: settings_slot.clone(),
         logs: logs_slot.clone(),
         health: Arc::new(RwLock::new(ProviderHealth::default())),
     });
 
-    let menu_channel = MenuEvent::receiver();
+    let ctx_for_init = ctx.clone();
+
+    MenuEvent::set_event_handler(Some({
+        let loop_proxy = loop_proxy.clone();
+        move |event: MenuEvent| {
+            let _ = loop_proxy.send_event(TrayUserEvent::MenuClick(event.id.0));
+        }
+    }));
+
     let ctx_for_loop = ctx.clone();
 
     let model = app
@@ -101,20 +106,39 @@ pub async fn run_with_proxy(app: AppConfig) -> anyhow::Result<()> {
         .unwrap_or("?");
     println!("✅ Codex Helper · {} · {}", model, app.proxy_base_url());
 
-    if settings::needs_first_run_setup() {
-        let _ = ctx.loop_proxy.send_event(TrayUserEvent::OpenSettings);
-    }
-
-    // 托盘事件循环会阻塞当前线程；block_in_place 让 Tokio 继续在其它 worker 上跑代理
-    tokio::task::block_in_place(|| {
+    let run_event_loop = move || {
         event_loop.run(move |event, elwt, control_flow| {
             *control_flow = ControlFlow::Wait;
 
             match event {
                 Event::NewEvents(StartCause::Init) => {
-                    let _ = ctx_for_loop
-                        .loop_proxy
-                        .send_event(TrayUserEvent::CheckHealth);
+                    let menu = match build_menu(&app_for_init, &ProviderHealth::default()) {
+                        Ok(menu) => menu,
+                        Err(err) => {
+                            tracing::error!("创建菜单失败: {err:#}");
+                            return;
+                        }
+                    };
+                    match TrayIconBuilder::new()
+                        .with_icon(crate::icon::tray_icon())
+                        .with_menu(Box::new(menu))
+                        .with_tooltip(&tooltip_text(&app_for_init, &ProviderHealth::default()))
+                        .build()
+                    {
+                        Ok(tray) => {
+                            *tray_slot.borrow_mut() = Some(tray);
+                            wake_main_run_loop();
+                            let _ = ctx_for_init
+                                .loop_proxy
+                                .send_event(TrayUserEvent::CheckHealth);
+                            if settings::needs_first_run_setup() {
+                                let _ = ctx_for_init
+                                    .loop_proxy
+                                    .send_event(TrayUserEvent::OpenSettings);
+                            }
+                        }
+                        Err(err) => tracing::error!("创建菜单栏图标失败: {err:#}"),
+                    }
                 }
                 Event::UserEvent(TrayUserEvent::RefreshUi) => {
                     refresh_tray_ui(&ctx_for_loop);
@@ -156,6 +180,9 @@ pub async fn run_with_proxy(app: AppConfig) -> anyhow::Result<()> {
                         Err(err) => tracing::error!("打开请求日志: {err:#}"),
                     }
                 }
+                Event::UserEvent(TrayUserEvent::MenuClick(id)) => {
+                    handle_menu_click(&ctx_for_loop, &id);
+                }
                 Event::WindowEvent {
                     window_id,
                     event: WindowEvent::CloseRequested,
@@ -170,20 +197,34 @@ pub async fn run_with_proxy(app: AppConfig) -> anyhow::Result<()> {
                 }
                 _ => {}
             }
-
-            if let Ok(menu_event) = menu_channel.try_recv() {
-                handle_menu_click(&ctx_for_loop, menu_event.id.0.as_str());
-            }
         });
-    });
+    };
+
+    // macOS：必须在 OS 主线程跑 tao 事件循环；Windows 用 block_in_place 避免阻塞 Tokio worker。
+    #[cfg(target_os = "macos")]
+    run_event_loop();
+
+    #[cfg(not(target_os = "macos"))]
+    tokio::task::block_in_place(run_event_loop);
 
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+fn wake_main_run_loop() {
+    use core_foundation::runloop::{CFRunLoopGetMain, CFRunLoopWakeUp};
+    unsafe {
+        CFRunLoopWakeUp(CFRunLoopGetMain());
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn wake_main_run_loop() {}
+
 struct TrayContext {
     config: Arc<RwLock<AppConfig>>,
     proxy: Arc<ProxyState>,
-    tray: TrayIcon,
+    tray: Rc<RefCell<Option<TrayIcon>>>,
     loop_proxy: EventLoopProxy<TrayUserEvent>,
     rt: tokio::runtime::Handle,
     settings: Rc<RefCell<Option<settings::SettingsWindow>>>,
@@ -369,10 +410,14 @@ async fn store_health(
 fn refresh_tray_ui(ctx: &Arc<TrayContext>) {
     let app = ctx.rt.block_on(async { ctx.config.read().await.clone() });
     let health = ctx.rt.block_on(async { ctx.health.read().await.clone() });
+    let tray_ref = ctx.tray.borrow();
+    let Some(tray) = tray_ref.as_ref() else {
+        return;
+    };
     if let Ok(menu) = build_menu(&app, &health) {
-        let _ = ctx.tray.set_menu(Some(Box::new(menu)));
+        let _ = tray.set_menu(Some(Box::new(menu)));
         let tip = tooltip_text(&app, &health);
-        let _ = ctx.tray.set_tooltip(Some(tip.as_str()));
+        let _ = tray.set_tooltip(Some(tip.as_str()));
     }
 }
 
