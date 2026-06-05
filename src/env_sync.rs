@@ -85,11 +85,3 @@ fn read_windows_user_env(key: &str) -> Option<String> {
         })
         .filter(|v| !v.trim().is_empty())
 }
-
-#[cfg(not(windows))]
-pub fn windows_user_env_is_set(key: &str) -> bool {
-    std::env::var(key)
-        .ok()
-        .filter(|v| !v.trim().is_empty())
-        .is_some()
-}

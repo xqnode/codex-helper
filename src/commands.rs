@@ -3,6 +3,7 @@ use reqwest::Client;
 use crate::cli::{Cli, Commands, EnvAction};
 use crate::codex;
 use crate::config::{self, AppConfig};
+#[cfg(windows)]
 use crate::env_sync;
 use crate::provider;
 use crate::proxy;
