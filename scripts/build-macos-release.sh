@@ -8,7 +8,7 @@ VERSION="$(grep '^version' "$ROOT/Cargo.toml" | head -1 | sed 's/.*"\(.*\)".*/\1
 APP_NAME="Codex Helper"
 APP_BUNDLE="$DIST/${APP_NAME}.app"
 DMG_PATH="$DIST/CodexHelper-${VERSION}-macos.dmg"
-BINARY="$ROOT/target/release/codex-helper"
+UNIVERSAL_BINARY="$ROOT/target/universal/codex-helper"
 ICON_PNG="$ROOT/assets/codex-helper.png"
 INFO_PLIST="$ROOT/installer/macos/Info.plist"
 README="$ROOT/installer/USAGE-zh-CN.txt"
@@ -16,8 +16,18 @@ README="$ROOT/installer/USAGE-zh-CN.txt"
 echo "Codex Helper v${VERSION} (macOS)"
 
 cd "$ROOT"
-echo "Building release..."
-cargo build --release
+echo "Building universal release (arm64 + x86_64)..."
+rustup target add aarch64-apple-darwin x86_64-apple-darwin >/dev/null 2>&1 || true
+cargo build --release --target aarch64-apple-darwin
+cargo build --release --target x86_64-apple-darwin
+mkdir -p "$ROOT/target/universal"
+lipo -create \
+    "$ROOT/target/aarch64-apple-darwin/release/codex-helper" \
+    "$ROOT/target/x86_64-apple-darwin/release/codex-helper" \
+    -output "$ROOT/target/universal/codex-helper"
+BINARY="$UNIVERSAL_BINARY"
+chmod +x "$BINARY"
+echo "  OK  $(lipo -info "$BINARY")"
 
 if [[ ! -f "$BINARY" ]]; then
     echo "Missing binary: $BINARY" >&2

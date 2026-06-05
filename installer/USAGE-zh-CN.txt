@@ -31,6 +31,15 @@ Codex Helper — 让 Codex 使用 DeepSeek / 千问 / 智谱 / Kimi / MiniMax
 
   API Key 写入 ~/.codex/.env 。诊断：codex-helper doctor
 
+  若图标上有 🚫 禁止符号（无法在此 Mac 上打开）：
+    多半是 CPU 架构不匹配。请用最新版 DMG（含 arm64 + x86_64 通用包），或终端检查：
+
+    file "/Applications/Codex Helper.app/Contents/MacOS/codex-helper"
+    uname -m
+
+    应看到 universal 或与本机 uname -m 一致（Apple 芯片 = arm64，Intel = x86_64）。
+    安装前先退出旧版（菜单栏 → 退出），卸载旧 App，弹出侧边栏里多余的 Codex Helper 磁盘。
+
 ═══════════════════════════════════════════════════════════════
 【Windows · 环境要求】
 ═══════════════════════════════════════════════════════════════
