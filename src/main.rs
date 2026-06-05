@@ -8,6 +8,8 @@ mod config;
 mod env_sync;
 mod icon;
 mod logs;
+#[cfg(target_os = "macos")]
+mod macos_dialog;
 mod paths;
 mod provider;
 mod proxy;
@@ -39,7 +41,9 @@ fn main() {
         .build()
         .expect("tokio runtime");
     if let Err(err) = rt.block_on(commands::run(cli)) {
-        eprintln!("❌ {err:#}");
+        let msg = format!("{err:#}");
+        eprintln!("❌ {msg}");
+        crate::macos_dialog::error("Codex Helper 启动失败", &msg);
         std::process::exit(1);
     }
 }

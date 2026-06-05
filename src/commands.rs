@@ -58,21 +58,25 @@ async fn cmd_init() -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn helper_is_running(app: &AppConfig) -> bool {
+    let health_url = format!(
+        "http://{}:{}/health",
+        app.proxy.host, app.proxy.port
+    );
+    let Ok(client) = Client::builder()
+        .timeout(std::time::Duration::from_secs(1))
+        .build()
+    else {
+        return false;
+    };
+    matches!(
+        client.get(&health_url).send().await,
+        Ok(resp) if resp.status().is_success()
+    )
+}
+
 async fn ensure_proxy_port_available(app: &AppConfig) -> anyhow::Result<()> {
     let addr = format!("{}:{}", app.proxy.host, app.proxy.port);
-    let health_url = format!("http://{addr}/health");
-
-    let client = Client::builder()
-        .timeout(std::time::Duration::from_secs(1))
-        .build()?;
-
-    if let Ok(resp) = client.get(&health_url).send().await {
-        if resp.status().is_success() {
-            anyhow::bail!(
-                "端口 {addr} 上已有 Codex Helper 在运行。请在任务栏找到图标 → 退出后再启动，或直接使用托盘切换模型。"
-            );
-        }
-    }
 
     match tokio::net::TcpListener::bind(&addr).await {
         Ok(listener) => {
@@ -92,6 +96,16 @@ async fn cmd_start(no_tray: bool) -> anyhow::Result<()> {
 
     #[cfg(any(windows, target_os = "macos"))]
     if !no_tray {
+        if helper_is_running(&app).await {
+            #[cfg(target_os = "macos")]
+            crate::macos_dialog::info(
+                "Codex Helper 已在运行",
+                "请点屏幕右上角菜单栏的闪电图标（可能被 >> 收起）。",
+            );
+            #[cfg(windows)]
+            println!("ℹ️  Codex Helper 已在运行，请看任务栏托盘图标。");
+            return Ok(());
+        }
         ensure_proxy_port_available(&app).await?;
         return crate::tray::run_with_proxy(app).await;
     }
