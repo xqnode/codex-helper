@@ -1,6 +1,6 @@
 ; Codex Helper Windows 安装包
 ; 编译前请先: cargo build --release
-; 或运行仓库根目录 build-installer.bat
+; 或运行 scripts\build-installer.bat
 
 #ifndef MyAppVersion
   #define MyAppVersion "0.1.0"

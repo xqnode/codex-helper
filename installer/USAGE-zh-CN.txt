@@ -1,6 +1,39 @@
 Codex Helper — 让 Codex 使用 DeepSeek / 千问 / 智谱 / Kimi / MiniMax
 
-【环境要求】
+═══════════════════════════════════════════════════════════════
+【macOS · 安装】
+═══════════════════════════════════════════════════════════════
+  1. 从 GitHub Releases 下载 CodexHelper-x.x.x-macos.dmg
+  2. 双击打开 DMG
+  3. 推荐：把 Codex Helper 拖到「应用程序」
+  4. 首次打开看菜单栏右上角（无 Dock 图标）
+
+  若提示「已损坏，无法打开」——不是文件坏了，是 macOS 安全拦截。
+  任选一种方式：
+
+  方式 A（推荐，避开 /Applications 权限问题）
+    打开「终端」，逐行执行：
+
+    mkdir -p ~/Applications
+    cp -R "/Volumes/Codex Helper/Codex Helper.app" ~/Applications/
+    xattr -cr "$HOME/Applications/Codex Helper.app"
+    open "$HOME/Applications/Codex Helper.app"
+
+  方式 B（装到系统应用程序文件夹）
+    系统设置 → 隐私与安全性 → 完全磁盘访问权限 → 打开「终端」
+    关掉终端再开，然后：
+
+    sudo xattr -dr com.apple.quarantine "/Applications/Codex Helper.app"
+    sudo codesign --force --deep --sign - "/Applications/Codex Helper.app"
+
+  方式 C
+    在 Finder 里右键 Codex Helper →「打开」→ 再点「打开」
+
+  API Key 写入 ~/.codex/.env 。诊断：codex-helper doctor
+
+═══════════════════════════════════════════════════════════════
+【Windows · 环境要求】
+═══════════════════════════════════════════════════════════════
   · Windows 10 / 11（64 位）
   · 已安装 OpenAI Codex Desktop，并能正常登录
   · 各模型厂商的 API Key（DeepSeek、千问等官网申请）

@@ -56,6 +56,13 @@ if [[ -f "$ROOT/assets/codex-helper.png" ]]; then
     rm -rf "$ICONSET"
 fi
 
+# ad-hoc 签名：减轻「已损坏」误报（仍非公证，首次可能需右键打开）
+if codesign --force --deep --sign - "$APP_BUNDLE" 2>/dev/null; then
+    echo "  OK  ad-hoc codesign"
+else
+    echo "  WARN  codesign skipped (non-fatal)"
+fi
+
 mkdir -p "$DIST"
 STAGING="$DIST/dmg-staging"
 rm -rf "$STAGING"
