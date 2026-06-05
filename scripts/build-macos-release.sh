@@ -9,6 +9,7 @@ APP_NAME="Codex Helper"
 APP_BUNDLE="$DIST/${APP_NAME}.app"
 DMG_PATH="$DIST/CodexHelper-${VERSION}-macos.dmg"
 BINARY="$ROOT/target/release/codex-helper"
+ICON_PNG="$ROOT/assets/codex-helper.png"
 INFO_PLIST="$ROOT/installer/macos/Info.plist"
 README="$ROOT/installer/USAGE-zh-CN.txt"
 
@@ -23,6 +24,31 @@ if [[ ! -f "$BINARY" ]]; then
     exit 1
 fi
 
+if [[ ! -f "$ICON_PNG" ]]; then
+    echo "Missing icon PNG: $ICON_PNG" >&2
+    echo "Expected build.rs to generate it from icon_render.rs (same as Windows .exe)." >&2
+    exit 1
+fi
+
+install_app_icon() {
+    local app_bundle="$1"
+    local iconset="$DIST/AppIcon.iconset"
+    local icns_path="$app_bundle/Contents/Resources/AppIcon.icns"
+
+    rm -rf "$iconset"
+    mkdir -p "$iconset"
+    for size in 16 32 128 256 512; do
+        sips -z "$size" "$size" "$ICON_PNG" \
+            --out "$iconset/icon_${size}x${size}.png" >/dev/null
+        local double=$((size * 2))
+        sips -z "$double" "$double" "$ICON_PNG" \
+            --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+    done
+    iconutil -c icns "$iconset" -o "$icns_path"
+    rm -rf "$iconset"
+    echo "  OK  AppIcon.icns (from icon_render.rs / same as Windows exe)"
+}
+
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 
@@ -34,26 +60,10 @@ cp "$INFO_PLIST" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" "$APP_BUNDLE/Contents/Info.plist"
 
+install_app_icon "$APP_BUNDLE"
+
 if [[ -f "$README" ]]; then
     cp "$README" "$APP_BUNDLE/Contents/Resources/USAGE-zh-CN.txt"
-fi
-
-# 可选：从 PNG 生成 .icns（需 assets/codex-helper.png，可手动放置）
-if [[ -f "$ROOT/assets/codex-helper.png" ]]; then
-    ICONSET="$DIST/AppIcon.iconset"
-    rm -rf "$ICONSET"
-    mkdir -p "$ICONSET"
-    for size in 16 32 128 256 512; do
-        sips -z "$size" "$size" "$ROOT/assets/codex-helper.png" \
-            --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
-        double=$((size * 2))
-        sips -z "$double" "$double" "$ROOT/assets/codex-helper.png" \
-            --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
-    done
-    iconutil -c icns "$ICONSET" -o "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
-    /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "$APP_BUNDLE/Contents/Info.plist" 2>/dev/null \
-        || /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "$APP_BUNDLE/Contents/Info.plist"
-    rm -rf "$ICONSET"
 fi
 
 # ad-hoc 签名：减轻「已损坏」误报（仍非公证，首次可能需右键打开）
@@ -71,6 +81,12 @@ cp -R "$APP_BUNDLE" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
 if [[ -f "$README" ]]; then
     cp "$README" "$STAGING/USAGE-zh-CN.txt"
+fi
+
+# DMG 卷标使用与 App 相同的图标
+cp "$APP_BUNDLE/Contents/Resources/AppIcon.icns" "$STAGING/.VolumeIcon.icns"
+if command -v SetFile >/dev/null 2>&1; then
+    SetFile -a C "$STAGING"
 fi
 
 rm -f "$DMG_PATH"

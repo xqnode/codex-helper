@@ -5,6 +5,7 @@
 # Build & release artifacts
 /dist/
 /assets/codex-helper.ico
+/assets/codex-helper.png
 *.exe
 *.pdb
 *.dll

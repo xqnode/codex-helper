@@ -31,6 +31,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
 
 [build-dependencies]
+png = "0.17"
+
+[target.'cfg(windows)'.build-dependencies]
 ico = "0.3"
 winres = "0.1"
 
