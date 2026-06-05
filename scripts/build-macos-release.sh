@@ -16,15 +16,39 @@ README="$ROOT/installer/USAGE-zh-CN.txt"
 echo "Codex Helper v${VERSION} (macOS)"
 
 cd "$ROOT"
-echo "Building universal release (arm64 + x86_64)..."
-rustup target add aarch64-apple-darwin x86_64-apple-darwin >/dev/null 2>&1 || true
-cargo build --release --target aarch64-apple-darwin
-cargo build --release --target x86_64-apple-darwin
-mkdir -p "$ROOT/target/universal"
-lipo -create \
-    "$ROOT/target/aarch64-apple-darwin/release/codex-helper" \
-    "$ROOT/target/x86_64-apple-darwin/release/codex-helper" \
-    -output "$ROOT/target/universal/codex-helper"
+
+HOST_ARCH="$(uname -m)"
+echo "Host: ${HOST_ARCH} · $(sw_vers -productName 2>/dev/null || echo macOS) $(sw_vers -productVersion 2>/dev/null || true)"
+echo ""
+
+build_release_binary() {
+    if [[ "${NATIVE_ONLY:-}" == "1" ]]; then
+        echo "Fast build: native ${HOST_ARCH} only (本机测试用，勿公开发布)"
+        echo "  → cargo build --release"
+        cargo build --release
+        mkdir -p "$ROOT/target/universal"
+        cp "$ROOT/target/release/codex-helper" "$UNIVERSAL_BINARY"
+        return
+    fi
+
+    echo "Universal build: arm64 + x86_64（需编译两遍，首次约 5–15 分钟，请耐心等待）"
+    echo "  → rustup target add ..."
+    rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+    echo "  → [1/2] cargo build --release --target aarch64-apple-darwin"
+    cargo build --release --target aarch64-apple-darwin
+
+    echo "  → [2/2] cargo build --release --target x86_64-apple-darwin (交叉编译，较慢)"
+    cargo build --release --target x86_64-apple-darwin
+
+    mkdir -p "$ROOT/target/universal"
+    lipo -create \
+        "$ROOT/target/aarch64-apple-darwin/release/codex-helper" \
+        "$ROOT/target/x86_64-apple-darwin/release/codex-helper" \
+        -output "$UNIVERSAL_BINARY"
+}
+
+build_release_binary
 BINARY="$UNIVERSAL_BINARY"
 chmod +x "$BINARY"
 echo "  OK  $(lipo -info "$BINARY")"
@@ -109,4 +133,6 @@ echo "Done."
 echo "  App: $APP_BUNDLE"
 echo "  DMG: $DMG_PATH (${SIZE_MB} MB)"
 echo ""
+echo ""
 echo "Note: 公开发布前需 codesign + notarize，否则 Gatekeeper 可能拦截。"
+echo "Tip: 本机 M 系列芯片快速测试可: NATIVE_ONLY=1 ./scripts/build-macos-release.sh"
