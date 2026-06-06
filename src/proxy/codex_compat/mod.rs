@@ -9,10 +9,9 @@
 //!
 //! 我们做的最小适配：
 //! 1. 移除了 cc-switch 业务相关的依赖（ProxyState、ProxyError、Database 等）。
-//! 2. 用一个轻量的 `CodexToolContext` 占位，把 namespace/custom tool 还原能力留作
-//!    "永远走 plain function" 分支（DeepSeek/通义等上游 chat completions 也只
-//!    支持普通 function calling，已足够）。
-//! 3. 把 `json_canonical` 削减为只剩 streaming 实际需要的三个纯函数（去掉 sha2）。
+//! 2. 完整 `CodexToolContext` 见 `proxy::codex_tool_context`，支持 namespace /
+//!    custom / tool_search 双向还原。
+//! 3. `json_canonical` 保留 canonical 序列化与 namespace 工具名哈希截断。
 //!
 //! `streaming_codex_chat::create_responses_sse_stream_from_chat` 是入口：
 //! 输入上游 chat completions SSE 字节流，输出 Codex Desktop 期望的 Responses
@@ -27,5 +26,17 @@ mod streaming_codex_chat;
 #[allow(unused_imports)]
 pub use streaming_codex_chat::create_responses_sse_stream_from_chat;
 pub(crate) use codex_chat_common::{
-    append_reasoning_content, extract_reasoning_field_text, extract_reasoning_summary_text,
+    append_reasoning_content, attach_optional_reasoning_content_field,
+    extract_reasoning_field_text, extract_reasoning_summary_text, response_function_call_item,
+    response_function_call_item_with_namespace, split_leading_think_block,
 };
+pub(crate) use codex_chat_helpers::{
+    chat_usage_to_responses_usage, response_id_from_chat_id, response_status_from_finish_reason,
+    response_tool_call_item_from_chat_name, response_tool_call_item_id_from_chat_name,
+    CodexToolContext,
+};
+pub(crate) use json_canonical::{
+    canonical_json_string, canonicalize_json_string_if_parseable, canonicalize_tool_arguments,
+    short_sha256_hex,
+};
+pub use streaming_codex_chat::create_responses_sse_stream_from_chat_with_context;

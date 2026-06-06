@@ -221,7 +221,7 @@ fn render_codex_config(app: &AppConfig, provider: &config::ProviderConfig) -> an
     );
     merged.insert(
         "model_reasoning_effort".into(),
-        toml::Value::String("high".into()),
+        toml::Value::String(app.normalized_model_reasoning_effort()),
     );
     // 勿开启 disable_response_storage：Codex Desktop 仍依赖 sessions/*.jsonl，
     // 开启后新建对话可能无法生成 rollout 文件，导致「恢复对话失败 / Error submitting message」。
@@ -376,10 +376,10 @@ mod tests {
 
     #[test]
     fn normalize_proxy_url_strips_trailing_slash() {
-        assert_eq!(
-            normalize_proxy_url("http://127.0.0.1:25543/v1/"),
-            normalize_proxy_url(&format!("http://127.0.0.1:{}:{}/v1/", config::DEFAULT_HOST, config::DEFAULT_PORT))
-        );
+        let with_slash = format!("http://{}:{}/v1/", config::DEFAULT_HOST, config::DEFAULT_PORT);
+        let without_slash = format!("http://{}:{}/v1", config::DEFAULT_HOST, config::DEFAULT_PORT);
+        assert_eq!(normalize_proxy_url(&with_slash), without_slash);
+        assert_eq!(normalize_proxy_url("http://127.0.0.1:25543/v1/"), without_slash);
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 ## 当前版本
 
-**v0.1.0**（2026-06-03）
+**v0.2.0**（2026-06-06）
 
 ## 下载
 
@@ -10,9 +10,9 @@
 
 | 文件 | 说明 |
 |------|------|
-| `CodexHelper-0.1.0-win64.zip` | Windows 便携版 — 解压后运行 `codex-helper.exe` |
-| `CodexHelper-0.1.0-Setup.exe` | Windows Inno Setup 安装包（中文界面） |
-| `CodexHelper-0.1.0-macos.dmg` | macOS — 打开 DMG，拖入「应用程序」（菜单栏应用） |
+| `CodexHelper-0.2.0-win64.zip` | Windows 便携版 — 解压后运行 `codex-helper.exe` |
+| `CodexHelper-0.2.0-Setup.exe` | Windows Inno Setup 安装包（中文界面，需本地 Inno Setup 构建） |
+| `CodexHelper-0.1.0-macos.dmg` | macOS — 见 [v0.1.0 Release](https://github.com/xqnode/codex-helper/releases/tag/v0.1.0)（macOS 需在 Mac 上自行构建） |
 
 ### 运行要求
 
@@ -45,19 +45,19 @@
 ## 发布新版本
 
 1. 修改 `Cargo.toml` 中的 `version`，并更新 `CHANGELOG.md`。
-2. 构建产物：运行 `.\scripts\build-all.bat`
+2. 构建产物：运行 `.\scripts\build-zip.bat` 或 `.\scripts\build-all.bat`
 3. 提交并打标签：
 
    ```powershell
-   git tag v0.1.1
+   git tag v0.2.0
    git push origin main --tags
    ```
 
 4. 创建 GitHub Release，上传 `dist/*.zip` 与 `dist/*Setup.exe`：
 
    ```powershell
-   gh release create v0.1.1 dist/CodexHelper-0.1.1-win64.zip dist/CodexHelper-0.1.1-Setup.exe `
-     --title "v0.1.1" `
+   gh release create v0.2.0 dist/CodexHelper-0.2.0-win64.zip `
+     --title "v0.2.0" `
      --notes-file CHANGELOG.md
    ```
 

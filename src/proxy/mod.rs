@@ -15,11 +15,19 @@ use tracing::{info, warn};
 
 use crate::config::{self, AppConfig};
 
+mod chat_to_responses;
 mod codex_compat;
+mod codex_tool_context;
 mod logged_stream;
+mod reasoning_options;
+mod responses_failed;
 mod responses_to_chat;
+mod upstream_retry;
 use logged_stream::LoggingByteStream;
-use responses_to_chat::{convert_responses_to_chat, normalize_messages_for_upstream};
+use responses_to_chat::{
+    convert_responses_to_chat_with_provider, finalize_chat_request, normalize_messages_for_upstream,
+    repair_messages_for_upstream_with_options,
+};
 use crate::logs::{logs_bootstrap, logs_clear, logs_page};
 use crate::request_log::{
     extract_model_from_body, parse_usage_from_json, PendingRequest, RequestLogStore,
@@ -31,16 +39,21 @@ type TrayHealthCheckHook = Arc<dyn Fn() + Send + Sync>;
 #[derive(Clone)]
 pub struct ProxyState {
     pub config: Arc<RwLock<AppConfig>>,
+    /// 非流式上游请求（总超时见 `DEFAULT_UPSTREAM_REQUEST_TIMEOUT_SECS`）。
     pub client: Client,
+    /// 流式上游请求（无总超时，读空闲超时见 `DEFAULT_UPSTREAM_STREAM_READ_IDLE_TIMEOUT_SECS`）。
+    pub streaming_client: Client,
     pub request_log: RequestLogStore,
     tray_health_check: Arc<StdRwLock<Option<TrayHealthCheckHook>>>,
 }
 
 pub fn spawn_server(config: AppConfig) -> anyhow::Result<Arc<ProxyState>> {
+    let (client, streaming_client) = config::build_proxy_upstream_clients()
+        .expect("failed to build upstream HTTP clients");
     let state = Arc::new(ProxyState {
         config: Arc::new(RwLock::new(config.clone())),
-        client: config::build_upstream_client(std::time::Duration::from_secs(300))
-            .expect("failed to build HTTP client"),
+        client,
+        streaming_client,
         request_log: RequestLogStore::new(),
         tray_health_check: Arc::new(StdRwLock::new(None)),
     });
@@ -100,9 +113,11 @@ pub fn request_tray_health_check(state: &ProxyState) {
 
 pub async fn start_server(config: AppConfig) -> anyhow::Result<()> {
     let addr = format!("{}:{}", config.proxy.host, config.proxy.port);
+    let (client, streaming_client) = config::build_proxy_upstream_clients()?;
     let state = ProxyState {
         config: Arc::new(RwLock::new(config.clone())),
-        client: config::build_upstream_client(std::time::Duration::from_secs(300))?,
+        client,
+        streaming_client,
         request_log: RequestLogStore::new(),
         tray_health_check: Arc::new(StdRwLock::new(None)),
     };
@@ -207,7 +222,15 @@ async fn proxy_chat(
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
-    forward_request(&state, "/chat/completions", Method::POST, headers, body).await
+    forward_request(
+        &state,
+        "/chat/completions",
+        Method::POST,
+        headers,
+        body,
+        false,
+    )
+    .await
 }
 
 async fn proxy_responses(
@@ -215,8 +238,19 @@ async fn proxy_responses(
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
-    match convert_responses_to_chat(&body) {
-        Ok(chat_body) => forward_responses_request(&state, headers, chat_body.into()).await,
+    let provider = match state.config.read().await.active_provider() {
+        Ok(provider) => provider.clone(),
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({ "error": err.to_string() })),
+            )
+                .into_response();
+        }
+    };
+    let tool_output_max_chars = state.config.read().await.tool_output_max_chars;
+    match convert_responses_to_chat_with_provider(&body, Some(&provider), tool_output_max_chars) {
+        Ok(converted) => forward_responses_request(&state, headers, converted).await,
         Err(err) => {
             warn!("Responses 请求转换失败: {err}");
             (
@@ -236,17 +270,36 @@ async fn proxy_responses(
 async fn forward_responses_request(
     state: &ProxyState,
     headers: HeaderMap,
-    body: axum::body::Bytes,
+    converted: responses_to_chat::ConvertedChatRequest,
 ) -> Response {
+    let config = state.config.read().await.clone();
+    let provider = match config.active_provider() {
+        Ok(provider) => provider,
+        Err(err) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({ "error": err.to_string() })),
+            )
+                .into_response();
+        }
+    };
+    let body = patch_upstream_model(&converted.body, &provider);
     let response = forward_request(
         state,
         "/chat/completions",
         Method::POST,
         headers,
-        body,
+        body.into(),
+        true,
     )
     .await;
-    convert_chat_response_to_responses(response).await
+    convert_chat_response_to_responses(
+        response,
+        converted.tool_context,
+        converted.stream,
+        &converted.model,
+    )
+    .await
 }
 
 async fn catch_all(
@@ -261,7 +314,7 @@ async fn catch_all(
         return (StatusCode::NOT_FOUND, "not found").into_response();
     }
     let upstream_path = path.trim_start_matches("/v1");
-    forward_request(&state, upstream_path, method, headers, body).await
+    forward_request(&state, upstream_path, method, headers, body, false).await
 }
 
 async fn forward_request(
@@ -270,6 +323,7 @@ async fn forward_request(
     method: Method,
     _headers: HeaderMap,
     body: axum::body::Bytes,
+    already_normalized: bool,
 ) -> Response {
     let started = std::time::Instant::now();
     let config = state.config.read().await.clone();
@@ -286,9 +340,16 @@ async fn forward_request(
 
     let rewritten_body = if body.is_empty() {
         None
+    } else if already_normalized {
+        Some(patch_upstream_model(&body, &provider))
     } else {
-        Some(normalize_upstream_body(&body, &provider))
+        Some(normalize_upstream_body(
+            &body,
+            &provider,
+            config.tool_output_max_chars,
+        ))
     };
+    let stream_request = is_streaming_upstream_body(rewritten_body.as_deref());
     let model = rewritten_body
         .as_ref()
         .map(|bytes| extract_model_from_body(bytes, provider.upstream_model()))
@@ -298,7 +359,7 @@ async fn forward_request(
         provider_name: provider.name.clone(),
         model,
         path: upstream_path.to_string(),
-        stream: false,
+        stream: stream_request,
         started,
         status: 0,
     };
@@ -329,79 +390,154 @@ async fn forward_request(
         upstream_path
     );
 
-    let mut request = state.client.request(method, &target);
-    request = request.header("Authorization", format!("Bearer {api_key}"));
-    request = request.header("Content-Type", "application/json");
-    // 不转发 Codex 客户端请求头（Accept / OpenAI-Beta 等），避免中转站报 Unsupported content type
+    let upstream_client = if stream_request {
+        &state.streaming_client
+    } else {
+        &state.client
+    };
 
-    if let Some(rewritten) = rewritten_body {
-        request = request.body(rewritten);
-    }
+    for attempt in 0..upstream_retry::MAX_UPSTREAM_ATTEMPTS {
+        let mut request = upstream_client.request(method.clone(), &target);
+        request = request.header("Authorization", format!("Bearer {api_key}"));
+        request = request.header("Content-Type", "application/json");
+        // 不转发 Codex 客户端请求头（Accept / OpenAI-Beta 等），避免中转站报 Unsupported content type
+        if let Some(rewritten) = rewritten_body.as_ref() {
+            request = request.body(rewritten.clone());
+        }
 
-    match request.send().await {
-        Ok(resp) => {
-            let status = resp.status();
-            let mut pending = pending_base;
-            pending.status = status.as_u16();
-            let mut response_headers = HeaderMap::new();
-            let mut is_sse = false;
-            for (name, value) in resp.headers() {
-                if name == reqwest::header::TRANSFER_ENCODING {
+        match request.send().await {
+            Ok(resp) => {
+                if upstream_retry::is_retryable_upstream_status(resp.status())
+                    && attempt + 1 < upstream_retry::MAX_UPSTREAM_ATTEMPTS
+                {
+                    let delay =
+                        upstream_retry::retry_delay_from_headers(resp.headers(), attempt);
+                    warn!(
+                        "上游返回 {}，{:?} 后重试 ({}/{})",
+                        resp.status(),
+                        delay,
+                        attempt + 2,
+                        upstream_retry::MAX_UPSTREAM_ATTEMPTS
+                    );
+                    tokio::time::sleep(delay).await;
                     continue;
                 }
-                if name == reqwest::header::CONTENT_TYPE {
-                    if let Ok(v) = value.to_str() {
-                        if v.to_ascii_lowercase().contains("text/event-stream") {
-                            is_sse = true;
-                        }
-                    }
-                }
-                if let Ok(v) = HeaderValue::from_bytes(value.as_bytes()) {
-                    response_headers.insert(name, v);
-                }
+                return finish_upstream_response(resp, pending_base, state).await;
             }
+            Err(err) => {
+                if upstream_retry::is_retryable_upstream_error(&err)
+                    && attempt + 1 < upstream_retry::MAX_UPSTREAM_ATTEMPTS
+                {
+                    let delay = upstream_retry::retry_backoff(attempt);
+                    warn!(
+                        "上游连接失败，{:?} 后重试 ({}/{}): {target} -> {err}",
+                        delay,
+                        attempt + 2,
+                        upstream_retry::MAX_UPSTREAM_ATTEMPTS
+                    );
+                    tokio::time::sleep(delay).await;
+                    continue;
+                }
 
-            if is_sse {
-                pending.stream = true;
-                response_headers.remove(reqwest::header::CONTENT_LENGTH);
-                let stream = LoggingByteStream::new(
-                    resp.bytes_stream(),
-                    pending,
-                    state.request_log.clone(),
-                );
-                let body = Body::from_stream(stream);
-                (status, response_headers, body).into_response()
-            } else {
-                let bytes = resp.bytes().await.unwrap_or_default();
-                let usage = serde_json::from_slice::<serde_json::Value>(&bytes)
-                    .ok()
-                    .and_then(|value| parse_usage_from_json(&value));
-                let entry = state.request_log.finalize(pending, usage);
+                let timeout_hint = upstream_timeout_hint(stream_request, &err);
+                warn!("上游请求失败: {target} -> {err}{timeout_hint}");
+                let mut pending = pending_base;
+                pending.status = StatusCode::BAD_GATEWAY.as_u16();
+                let entry = state.request_log.finalize(pending, None);
                 state.request_log.push(entry).await;
-                (status, response_headers, Body::from(bytes)).into_response()
+                return (
+                    StatusCode::BAD_GATEWAY,
+                    axum::Json(serde_json::json!({
+                        "error": {
+                            "message": format!("上游请求失败: {err}{timeout_hint}"),
+                            "type": "upstream_error"
+                        }
+                    })),
+                )
+                    .into_response();
             }
         }
-        Err(err) => {
-            warn!("上游请求失败: {target} -> {err}");
-            let mut pending = pending_base;
-            pending.status = StatusCode::BAD_GATEWAY.as_u16();
-            let entry = state.request_log.finalize(pending, None);
-            state.request_log.push(entry).await;
-            (
-                StatusCode::BAD_GATEWAY,
-                axum::Json(serde_json::json!({
-                    "error": {
-                        "message": format!("上游请求失败: {err}"),
-                        "type": "upstream_error"
-                    }
-                })),
-            )
-                .into_response()
+    }
+
+    unreachable!("upstream retry loop must return inside");
+}
+
+async fn finish_upstream_response(
+    resp: reqwest::Response,
+    pending_base: PendingRequest,
+    state: &ProxyState,
+) -> Response {
+    let status = resp.status();
+    let mut pending = pending_base;
+    pending.status = status.as_u16();
+    let mut response_headers = HeaderMap::new();
+    let mut is_sse = false;
+    for (name, value) in resp.headers() {
+        if name == reqwest::header::TRANSFER_ENCODING {
+            continue;
         }
+        if name == reqwest::header::CONTENT_TYPE {
+            if let Ok(v) = value.to_str() {
+                if v.to_ascii_lowercase().contains("text/event-stream") {
+                    is_sse = true;
+                }
+            }
+        }
+        if let Ok(v) = HeaderValue::from_bytes(value.as_bytes()) {
+            response_headers.insert(name, v);
+        }
+    }
+
+    if is_sse {
+        pending.stream = true;
+        response_headers.remove(reqwest::header::CONTENT_LENGTH);
+        let stream = LoggingByteStream::new(
+            resp.bytes_stream(),
+            pending,
+            state.request_log.clone(),
+        );
+        let body = Body::from_stream(stream);
+        (status, response_headers, body).into_response()
+    } else {
+        let bytes = resp.bytes().await.unwrap_or_default();
+        let usage = serde_json::from_slice::<serde_json::Value>(&bytes)
+            .ok()
+            .and_then(|value| parse_usage_from_json(&value));
+        let entry = state.request_log.finalize(pending, usage);
+        state.request_log.push(entry).await;
+        (status, response_headers, Body::from(bytes)).into_response()
     }
 }
 
-async fn convert_chat_response_to_responses(response: Response) -> Response {
+fn is_streaming_upstream_body(body: Option<&[u8]>) -> bool {
+    let Some(bytes) = body else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(bytes) else {
+        return false;
+    };
+    value
+        .get("stream")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
+fn upstream_timeout_hint(stream_request: bool, err: &reqwest::Error) -> &'static str {
+    if !err.is_timeout() {
+        return "";
+    }
+    if stream_request {
+        return "（流式读空闲超时：上游超过 300 秒未发送新数据）";
+    }
+    "（非流式请求总超时：上游在 600 秒内未完成响应）"
+}
+
+async fn convert_chat_response_to_responses(
+    response: Response,
+    tool_context: codex_tool_context::CodexToolContext,
+    stream_request: bool,
+    model: &str,
+) -> Response {
     let status = response.status();
     let content_type = response
         .headers()
@@ -411,7 +547,29 @@ async fn convert_chat_response_to_responses(response: Response) -> Response {
         .to_ascii_lowercase();
 
     if !status.is_success() {
-        return response;
+        let body = response.into_body();
+        let bytes = match axum::body::to_bytes(body, usize::MAX).await {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                warn!("读取上游错误响应失败: {err}");
+                return responses_failed::responses_failed_http_response(
+                    StatusCode::BAD_GATEWAY,
+                    stream_request,
+                    &format!("读取上游错误响应失败: {err}"),
+                    Some("upstream_error"),
+                    model,
+                );
+            }
+        };
+        let (message, error_type) = responses_failed::extract_upstream_error_message(&bytes);
+        warn!("上游返回错误: status={status} message={message}");
+        return responses_failed::responses_failed_http_response(
+            status,
+            stream_request,
+            &message,
+            error_type.as_deref(),
+            model,
+        );
     }
 
     // 流式分支：上游返回 chat completions SSE chunks，需要翻译成
@@ -427,7 +585,11 @@ async fn convert_chat_response_to_responses(response: Response) -> Response {
         let upstream_stream = body
             .into_data_stream()
             .map_err(std::io::Error::other);
-        let translated = codex_compat::create_responses_sse_stream_from_chat(upstream_stream);
+        let translated =
+            codex_compat::create_responses_sse_stream_from_chat_with_context(
+                upstream_stream,
+                tool_context,
+            );
         parts.headers.remove(reqwest::header::CONTENT_LENGTH);
         parts.headers.insert(
             reqwest::header::CONTENT_TYPE,
@@ -445,20 +607,17 @@ async fn convert_chat_response_to_responses(response: Response) -> Response {
         Ok(bytes) => bytes,
         Err(err) => {
             warn!("读取上游响应失败: {err}");
-            return (
+            return responses_failed::responses_failed_http_response(
                 StatusCode::BAD_GATEWAY,
-                axum::Json(serde_json::json!({
-                    "error": {
-                        "message": format!("读取上游响应失败: {err}"),
-                        "type": "upstream_error"
-                    }
-                })),
-            )
-                .into_response();
+                stream_request,
+                &format!("读取上游响应失败: {err}"),
+                Some("upstream_error"),
+                model,
+            );
         }
     };
 
-    match chat_json_to_responses_json(&bytes) {
+    match chat_json_to_responses_json(&bytes, &tool_context) {
         Ok(converted) => (
             status,
             [(reqwest::header::CONTENT_TYPE.as_str(), "application/json")],
@@ -466,92 +625,97 @@ async fn convert_chat_response_to_responses(response: Response) -> Response {
         )
             .into_response(),
         Err(err) => {
-            let hint = if bytes.starts_with(b"<") || bytes.windows(5).any(|w| w == b"<!DOC" || w == b"<html") {
-                "（上游返回了 HTML 页面，请确认 Base URL 是否应以 /v1 结尾，例如 http://host:8080/v1）"
-            } else if bytes.is_empty() {
-                "（上游响应体为空）"
+            let (message, error_type) = responses_failed::extract_upstream_error_message(&bytes);
+            let message = if message.is_empty() {
+                format!("Chat 响应转换 Responses 失败: {err}")
             } else {
-                ""
+                format!("Chat 响应转换 Responses 失败: {err}（上游返回: {message}）")
             };
-            warn!("Chat 响应转换 Responses 失败: {err}{hint}");
-            (
+            warn!("{message}");
+            responses_failed::responses_failed_http_response(
                 StatusCode::BAD_GATEWAY,
-                axum::Json(serde_json::json!({
-                    "error": {
-                        "message": format!("Chat 响应转换 Responses 失败: {err}{hint}"),
-                        "type": "upstream_error"
-                    }
-                })),
+                stream_request,
+                &message,
+                error_type.as_deref().or(Some("upstream_error")),
+                model,
             )
-                .into_response()
         }
     }
 }
 
-fn chat_json_to_responses_json(bytes: &[u8]) -> anyhow::Result<String> {
+fn chat_json_to_responses_json(
+    bytes: &[u8],
+    tool_context: &codex_tool_context::CodexToolContext,
+) -> anyhow::Result<String> {
     let value: serde_json::Value = serde_json::from_slice(bytes)?;
-    let id = value
-        .get("id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("resp_codex_helper");
-    let model = value
-        .get("model")
-        .and_then(|v| v.as_str())
-        .unwrap_or("deepseek-chat");
-    let created_at = value
-        .get("created")
-        .and_then(|v| v.as_i64())
-        .unwrap_or_else(unix_timestamp_now);
-    let output_text = value
-        .get("choices")
-        .and_then(|v| v.as_array())
-        .and_then(|choices| choices.first())
-        .and_then(|choice| choice.get("message"))
-        .and_then(|message| message.get("content"))
-        .and_then(|content| content.as_str())
-        .unwrap_or_default();
-
-    let usage = value.get("usage").cloned().unwrap_or_else(|| {
-        serde_json::json!({
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "total_tokens": 0,
-        })
-    });
-
-    let response = serde_json::json!({
-        "id": id,
-        "object": "response",
-        "created_at": created_at,
-        "status": "completed",
-        "model": model,
-        "output": [{
-            "id": format!("msg_{id}"),
-            "type": "message",
-            "status": "completed",
-            "role": "assistant",
-            "content": [{
-                "type": "output_text",
-                "text": output_text,
-                "annotations": []
-            }]
-        }],
-        "output_text": output_text,
-        "usage": usage,
-    });
+    let response = chat_to_responses::chat_completion_to_response_with_context(&value, tool_context)?;
     Ok(serde_json::to_string(&response)?)
-}
-
-fn unix_timestamp_now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn deepseek_provider() -> config::ProviderConfig {
+        config::ProviderConfig {
+            id: "deepseek".into(),
+            name: "DeepSeek".into(),
+            base_url: "https://api.deepseek.com/v1".into(),
+            api_key_env: "DEEPSEEK_API_KEY".into(),
+            default_model: "deepseek-v4-flash".into(),
+            api_model: "deepseek-v4-flash".into(),
+            wire_api: "responses".into(),
+        }
+    }
+
+    fn qwen_provider() -> config::ProviderConfig {
+        config::ProviderConfig {
+            id: "qwen".into(),
+            name: "千问".into(),
+            base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1".into(),
+            api_key_env: "DASHSCOPE_API_KEY".into(),
+            default_model: "qwen3.7-max".into(),
+            api_model: "qwen3.7-max".into(),
+            wire_api: "responses".into(),
+        }
+    }
+
+    #[test]
+    fn maps_reasoning_effort_for_deepseek_provider() {
+        let body = br#"{"model":"deepseek-v4-pro","stream":false,"reasoning":{"effort":"high"},"messages":[{"role":"user","content":"hi"}]}"#;
+        let out = normalize_upstream_body(
+            &axum::body::Bytes::from_static(body),
+            &deepseek_provider(),
+            0,
+        );
+        let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["reasoning_effort"], "high");
+        assert_eq!(v["thinking"]["type"], "enabled");
+        assert!(v.get("reasoning").is_none());
+    }
+
+    #[test]
+    fn injects_reasoning_placeholder_only_for_thinking_providers() {
+        let body = br#"{"model":"deepseek-v4-flash","messages":[
+            {"role":"user","content":"run"},
+            {"role":"assistant","content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"a","arguments":"{}"}}]},
+            {"role":"tool","tool_call_id":"call_1","content":"ok"}
+        ]}"#;
+        let deepseek_out = normalize_upstream_body(
+            &axum::body::Bytes::from_static(body),
+            &deepseek_provider(),
+            0,
+        );
+        let qwen_out = normalize_upstream_body(
+            &axum::body::Bytes::from_static(body),
+            &qwen_provider(),
+            0,
+        );
+        let deepseek: serde_json::Value = serde_json::from_slice(&deepseek_out).unwrap();
+        let qwen: serde_json::Value = serde_json::from_slice(&qwen_out).unwrap();
+        assert_eq!(deepseek["messages"][1]["reasoning_content"], "tool call");
+        assert!(qwen["messages"][1].get("reasoning_content").is_none());
+    }
 
     #[test]
     fn maps_developer_role_to_system() {
@@ -567,6 +731,7 @@ mod tests {
                 api_model: "deepseek-v4-flash".into(),
                 wire_api: "responses".into(),
             },
+            0,
         );
         let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(v["messages"][0]["role"], "system");
@@ -575,9 +740,28 @@ mod tests {
     }
 
     #[test]
+    fn patch_upstream_model_only_replaces_model_field() {
+        let provider = deepseek_provider();
+        let body = br#"{"model":"gpt-5.4","stream":true,"messages":[{"role":"developer","content":"hi"}]}"#;
+        let out = patch_upstream_model(body, &provider);
+        let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["model"], "deepseek-v4-flash");
+        assert_eq!(v["messages"][0]["role"], "developer");
+    }
+
+    #[test]
+    fn detects_streaming_flag_in_upstream_body() {
+        assert!(!is_streaming_upstream_body(None));
+        assert!(!is_streaming_upstream_body(Some(br#"{"model":"m","stream":false}"#)));
+        assert!(is_streaming_upstream_body(Some(br#"{"model":"m","stream":true}"#)));
+    }
+
+    #[test]
     fn wraps_chat_response_as_responses_json() {
         let body = br#"{"id":"chatcmpl_1","object":"chat.completion","created":123,"model":"deepseek-chat","choices":[{"message":{"role":"assistant","content":"pong"}}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
-        let out = chat_json_to_responses_json(body).unwrap();
+        let out =
+            chat_json_to_responses_json(body, &codex_tool_context::CodexToolContext::default())
+                .unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["object"], "response");
         assert_eq!(v["status"], "completed");
@@ -586,14 +770,46 @@ mod tests {
     }
 }
 
-fn normalize_upstream_body(body: &axum::body::Bytes, provider: &config::ProviderConfig) -> Vec<u8> {
+/// Responses→Chat 转换后的请求体只需替换上游 model，避免重复 normalize/repair。
+fn patch_upstream_model(body: &[u8], provider: &config::ProviderConfig) -> Vec<u8> {
+    let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return body.to_vec();
+    };
+
+    let upstream = provider.upstream_model();
+    if !upstream.trim().is_empty() {
+        value["model"] = serde_json::Value::String(upstream.to_string());
+    }
+
+    serde_json::to_vec(&value).unwrap_or_else(|_| body.to_vec())
+}
+
+fn normalize_upstream_body(
+    body: &axum::body::Bytes,
+    provider: &config::ProviderConfig,
+    tool_output_max_chars: usize,
+) -> Vec<u8> {
     let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(body) else {
         return body.to_vec();
     };
 
     if let Some(messages) = value.get_mut("messages").and_then(|m| m.as_array_mut()) {
         normalize_messages_for_upstream(messages);
+        repair_messages_for_upstream_with_options(
+            messages,
+            responses_to_chat::repair_options_for_provider(
+                Some(provider),
+                tool_output_max_chars,
+            ),
+        );
     }
+
+    let stream = value
+        .get("stream")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    finalize_chat_request(&mut value, stream);
+    reasoning_options::apply_reasoning_options(&mut value, provider);
 
     let upstream = provider.upstream_model();
     if !upstream.trim().is_empty() {

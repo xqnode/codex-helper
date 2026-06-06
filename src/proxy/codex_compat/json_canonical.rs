@@ -9,6 +9,7 @@
 //!   `canonicalize_tool_arguments_str`.
 
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 pub(crate) fn canonical_json_string(value: &Value) -> String {
     match value {
@@ -62,4 +63,21 @@ pub(crate) fn canonicalize_tool_arguments_str(value: &str) -> String {
         return "{}".to_string();
     }
     canonicalize_json_string_if_parseable(value)
+}
+
+pub(crate) fn canonicalize_tool_arguments(value: Option<&Value>) -> String {
+    match value {
+        Some(Value::String(s)) => canonicalize_tool_arguments_str(s),
+        Some(v) => canonical_json_string(v),
+        None => "{}".to_string(),
+    }
+}
+
+pub(crate) fn short_sha256_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    digest
+        .iter()
+        .take(8)
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
 }

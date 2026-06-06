@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use crate::config::{AppConfig, ProviderConfig};
+use crate::provider::codex_chat_reasoning::supported_reasoning_levels_for_catalog;
 use crate::provider::models::{self, ModelVariant};
 use crate::paths;
 
@@ -33,6 +34,7 @@ pub fn catalog_path_string() -> anyhow::Result<String> {
 
 fn build_merged_catalog(app: &AppConfig) -> anyhow::Result<serde_json::Value> {
     let active = app.active_provider()?;
+    let default_reasoning_effort = app.normalized_model_reasoning_effort();
     let active_variants = models::popular_models(&active.id);
     let active_slugs: HashSet<String> = active_variants
         .iter()
@@ -55,12 +57,14 @@ fn build_merged_catalog(app: &AppConfig) -> anyhow::Result<serde_json::Value> {
         let is_active = active.default_model == variant.slug;
         let entry = if let Some(mut model) = by_slug.remove(&slug) {
             patch_variant_metadata(&mut model, active, variant, true);
+            apply_reasoning_catalog_fields(&mut model, active, &default_reasoning_effort);
             if is_active {
                 ensure_variant_display_name(&mut model, variant);
             }
             model
         } else {
             let mut model = model_from_variant(&template, active, variant);
+            apply_reasoning_catalog_fields(&mut model, active, &default_reasoning_effort);
             if is_active {
                 ensure_variant_display_name(&mut model, variant);
             }
@@ -232,25 +236,58 @@ fn minimal_model_entry(provider: &ProviderConfig) -> serde_json::Value {
         "input_modalities": ["text"],
         "supports_parallel_tool_calls": true,
         "supports_reasoning_summaries": false,
-        "default_reasoning_level": "medium",
         "apply_patch_tool_type": "freeform",
         "shell_type": "shell_command",
         "web_search_tool_type": "text_and_image",
-        "supported_reasoning_levels": [
-            { "description": "更快", "effort": "low" },
-            { "description": "均衡", "effort": "medium" },
-            { "description": "更强推理", "effort": "high" },
-            { "description": "极限推理", "effort": "xhigh" }
-        ],
     });
+    apply_reasoning_catalog_fields(&mut entry, provider, crate::config::DEFAULT_MODEL_REASONING_EFFORT);
     ensure_required_v26_fields(&mut entry);
     entry
+}
+
+fn apply_reasoning_catalog_fields(
+    model: &mut serde_json::Value,
+    provider: &ProviderConfig,
+    default_reasoning_effort: &str,
+) {
+    let Some(obj) = model.as_object_mut() else {
+        return;
+    };
+
+    if let Some(levels) = supported_reasoning_levels_for_catalog(provider) {
+        obj.insert(
+            "default_reasoning_level".into(),
+            default_reasoning_effort.into(),
+        );
+        obj.insert("supported_reasoning_levels".into(), levels);
+    } else {
+        obj.remove("default_reasoning_level");
+        obj.remove("supported_reasoning_levels");
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::AppConfig;
+
+    #[test]
+    fn catalog_exposes_reasoning_levels_only_for_effort_providers() {
+        let mut app = AppConfig::default();
+        app.model_reasoning_effort = "high".into();
+
+        app.active = "deepseek".into();
+        let deepseek = build_merged_catalog(&app).unwrap();
+        let deepseek_model = &deepseek["models"].as_array().unwrap()[0];
+        assert!(deepseek_model.get("supported_reasoning_levels").is_some());
+        assert_eq!(deepseek_model["default_reasoning_level"], "high");
+
+        app.active = "kimi".into();
+        let kimi = build_merged_catalog(&app).unwrap();
+        let kimi_model = &kimi["models"].as_array().unwrap()[0];
+        assert!(kimi_model.get("supported_reasoning_levels").is_none());
+        assert!(kimi_model.get("default_reasoning_level").is_none());
+    }
 
     #[test]
     fn catalog_lists_only_active_provider_models() {

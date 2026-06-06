@@ -6,6 +6,9 @@ use serde::Deserialize;
 use crate::codex;
 use crate::config::{self, AppConfig};
 use crate::provider;
+use crate::provider::codex_chat_reasoning::{
+    provider_supports_reasoning_effort_levels, supported_reasoning_levels_for_catalog,
+};
 use crate::proxy::{reload_config_in_state, request_tray_health_check, ProxyState};
 use crate::settings;
 
@@ -54,6 +57,7 @@ pub async fn settings_bootstrap() -> impl IntoResponse {
         let key_preview = config::resolve_api_key(&preset.api_key_env)
             .ok()
             .map(|k| mask_key_preview(&k));
+        let supports_reasoning_effort = provider_supports_reasoning_effort_levels(preset);
         providers.push(serde_json::json!({
             "id": preset.id,
             "name": preset.name,
@@ -62,11 +66,14 @@ pub async fn settings_bootstrap() -> impl IntoResponse {
             "key_preview": key_preview,
             "base_url": preset.base_url,
             "is_custom": preset.id == "custom",
+            "supports_reasoning_effort_levels": supports_reasoning_effort,
+            "supported_reasoning_levels": supported_reasoning_levels_for_catalog(preset),
         }));
     }
 
     Json(serde_json::json!({
         "active": app.active,
+        "model_reasoning_effort": app.normalized_model_reasoning_effort(),
         "providers": providers,
     }))
     .into_response()
@@ -79,6 +86,8 @@ pub struct SettingsSaveBody {
     api_key: String,
     #[serde(default)]
     base_url: String,
+    #[serde(default)]
+    model_reasoning_effort: String,
 }
 
 pub async fn settings_save(
@@ -90,6 +99,7 @@ pub async fn settings_save(
         &body.provider_id,
         body.api_key.trim(),
         body.base_url.trim(),
+        body.model_reasoning_effort.trim(),
     )
     .await
     {
@@ -201,6 +211,7 @@ async fn save_api_key(
     provider_id: &str,
     api_key: &str,
     base_url: &str,
+    model_reasoning_effort: &str,
 ) -> anyhow::Result<String> {
     let mut app = AppConfig::load()?;
     provider::get_preset(&app, provider_id)?;
@@ -212,6 +223,12 @@ async fn save_api_key(
     apply_custom_base_url(provider_cfg, base_url)?;
 
     let provider = provider_cfg.clone();
+    if provider_supports_reasoning_effort_levels(&provider) {
+        if !model_reasoning_effort.is_empty() {
+            app.model_reasoning_effort =
+                config::normalize_model_reasoning_effort(model_reasoning_effort);
+        }
+    }
     if !api_key.is_empty() {
         config::save_env_value(&provider.api_key_env, api_key)?;
     } else if config::resolve_api_key(&provider.api_key_env).is_err() {

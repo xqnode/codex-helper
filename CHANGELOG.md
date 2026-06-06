@@ -7,9 +7,35 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-06
+
+### 新增
+
+- **厂商感知推理参数映射**（`codex_chat_reasoning` / `reasoning_options`）：DeepSeek、MiniMax、智谱、Kimi、千问、MiMo、OpenRouter 等按各自 API 形态注入 `thinking` / `reasoning_effort` / `enable_thinking`
+- **设置页推理档位**：可配置默认 `model_reasoning_effort`（默认 `medium`），写入 Codex `config.toml`
+- **内置工具历史合成**：`web_search` / `file_search` / `local_shell` 等 Responses 内置调用转为标准 assistant+tool 历史，避免上游格式拒绝
+- **上游有限重试**：429 / 502 / 503 / 504 及连接/超时错误，最多 3 次，指数退避（500ms→1s→2s），尊重 `Retry-After`（封顶 30s）
+- **Responses 上游错误包装**：非 2xx 转为 Responses `failed` JSON/SSE，客户端不再收到裸 Chat 错误
+- **可选 tool 输出截断**：`tool_output_max_chars`（默认 `0` 关闭），开启后对超长 `role: tool` 文本做 head+tail 截断
+- **Chat↔Responses 双向转换增强**：`chat_to_responses`、`codex_tool_context`、流式 SSE 还原 namespace / custom / tool_search
+- **附件占位**：`input_file` / 音视频等不支持类型转为文本占位，避免上游 multimodal 报错
+- 单元测试由 41 项增至 **109 项**
+
 ### 变更
 
-- 本地代理默认端口由随机分配改为固定 **25543**，便于排查连接问题并与文档一致
+- 流式读空闲超时 **300s**、非流式总超时 **600s**、连接超时 30s；流式客户端无总超时，适配思考模型慢首 token
+- `reasoning_content` 优先回传真实推理（summary / 前序 assistant），仅兜底时使用 `"tool call"` 占位
+- Responses 转发路径去掉双重 `repair`，仅 `patch_upstream_model`，减少历史被重复改写
+- 内置工具 arguments/result 分离；`local_shell_call_output` 只传 output，降低 input token
+- 本地代理默认端口固定 **25543**（自 v0.1.0 后续文档对齐）
+
+### 修复
+
+- 多轮 tool 历史：`repair_messages_for_upstream` 合并连续 assistant tool_calls、补齐缺失 tool 回复、system 合并至首条
+- DeepSeek / Kimi 等 thinking 模型多轮 tool 时 `reasoning_content` 缺失导致 400
+- MiniMax / 各厂商 reasoning 参数形态审计与修正
+- Codex `insufficient tool messages` 类错误的多轮会话修复
+- 流式 SSE 多字节字符边界、超大 remainder 防御性 flush
 
 ## [0.1.0] - 2026-06-04
 
@@ -39,4 +65,5 @@
 - 千问切换后工具调用失效（转发 tools 到上游 API）
 - rollout 会话文件缺失导致无法对话
 
+[0.2.0]: https://github.com/xqnode/codex-helper/releases/tag/v0.2.0
 [0.1.0]: https://github.com/xqnode/codex-helper/releases/tag/v0.1.0

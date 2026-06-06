@@ -197,6 +197,19 @@
       cursor: default;
     }
 
+    select.text-input {
+      appearance: none;
+      padding-right: 36px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      cursor: pointer;
+    }
+
+    .field.hidden {
+      display: none;
+    }
+
     .provider-grid {
       display: flex;
       flex-wrap: wrap;
@@ -503,6 +516,11 @@
         <input id="baseUrlInput" class="text-input" type="url" placeholder="https://api.example.com/v1" autocomplete="off" spellcheck="false" />
         <p class="field-foot" id="baseUrlHint">OpenAI 兼容 API 地址，末尾一般带 /v1</p>
       </div>
+      <div class="field hidden" id="reasoningEffortField">
+        <label class="field-label" for="reasoningEffortSelect">推理档位</label>
+        <select id="reasoningEffortSelect" class="text-input" aria-label="推理档位"></select>
+        <p class="field-foot" id="reasoningEffortHint">写入 Codex 默认推理强度（`model_reasoning_effort`）</p>
+      </div>
       <div class="field">
         <label class="field-label" for="apiKey">
           API Key
@@ -545,6 +563,23 @@
     let providers = [];
     let selectedId = '';
     let runtimeActive = '';
+    let modelReasoningEffort = 'medium';
+
+    const REASONING_PRESETS = {
+      deepseek: [
+        { description: '均衡', effort: 'medium' },
+        { description: '更强推理', effort: 'high' },
+        { description: '极限推理', effort: 'xhigh' },
+      ],
+      openrouter: [
+        { description: '关闭推理', effort: 'none' },
+        { description: '极快', effort: 'minimal' },
+        { description: '更快', effort: 'low' },
+        { description: '均衡', effort: 'medium' },
+        { description: '更强推理', effort: 'high' },
+        { description: '极限推理', effort: 'xhigh' },
+      ],
+    };
 
     function showStatus(text, kind) {
       const el = document.getElementById('status');
@@ -594,12 +629,68 @@
       });
     }
 
+    function resolveReasoningProfile(p) {
+      if (!p) return { supported: false, levels: [] };
+      if (p.id !== 'custom') {
+        return {
+          supported: !!p.supports_reasoning_effort_levels,
+          levels: Array.isArray(p.supported_reasoning_levels) ? p.supported_reasoning_levels : [],
+        };
+      }
+      const url = (document.getElementById('baseUrlInput').value.trim() || p.base_url || '').toLowerCase();
+      if (url.includes('openrouter')) {
+        return { supported: true, levels: REASONING_PRESETS.openrouter };
+      }
+      if (url.includes('deepseek')) {
+        return { supported: true, levels: REASONING_PRESETS.deepseek };
+      }
+      return { supported: false, levels: [] };
+    }
+
+    function refreshReasoningField() {
+      const field = document.getElementById('reasoningEffortField');
+      const select = document.getElementById('reasoningEffortSelect');
+      const hint = document.getElementById('reasoningEffortHint');
+      const profile = resolveReasoningProfile(selected());
+
+      if (!profile.supported || profile.levels.length === 0) {
+        field.classList.add('hidden');
+        select.innerHTML = '';
+        return;
+      }
+
+      field.classList.remove('hidden');
+      select.innerHTML = '';
+      let hasCurrent = false;
+      profile.levels.forEach(level => {
+        const option = document.createElement('option');
+        option.value = level.effort;
+        option.textContent = level.description + ' (' + level.effort + ')';
+        if (level.effort === modelReasoningEffort) {
+          option.selected = true;
+          hasCurrent = true;
+        }
+        select.appendChild(option);
+      });
+      if (!hasCurrent) {
+        select.value = profile.levels[0].effort;
+      }
+      hint.textContent = '当前厂商支持多档推理；保存后写入 Codex 的 model_reasoning_effort';
+    }
+
+    function currentReasoningEffortValue() {
+      const field = document.getElementById('reasoningEffortField');
+      if (field.classList.contains('hidden')) return '';
+      return document.getElementById('reasoningEffortSelect').value;
+    }
+
     function selectProvider(id) {
       if (id === selectedId) return;
       selectedId = id;
       hideStatus();
       renderProviderGrid();
       refreshBaseUrlField();
+      refreshReasoningField();
       refreshKeyField();
       updateSignupLink();
       updateKeyBadge(!!selected()?.key_configured);
@@ -663,19 +754,26 @@
       }
     }
 
-    function initProviders(list, active) {
+    function initProviders(list, active, reasoningEffort) {
       providers = list;
       runtimeActive = active || '';
+      modelReasoningEffort = reasoningEffort || 'medium';
       selectedId = active || (list[0] && list[0].id) || '';
       renderProviderGrid();
       updateSubtitle();
       updateSignupLink();
       updateKeyBadge(!!selected()?.key_configured);
       refreshBaseUrlField();
+      refreshReasoningField();
       refreshKeyField();
     }
 
-    document.getElementById('baseUrlInput').addEventListener('input', () => hideStatus());
+    document.getElementById('baseUrlInput').addEventListener('input', () => {
+      hideStatus();
+      if (isCustom()) refreshReasoningField();
+    });
+
+    document.getElementById('reasoningEffortSelect').addEventListener('change', () => hideStatus());
 
     document.getElementById('toggleKey').addEventListener('click', () => {
       const input = document.getElementById('apiKey');
@@ -784,9 +882,12 @@
         const data = await api('/admin/settings/save', {
           provider_id: p.id,
           api_key: key,
+          model_reasoning_effort: currentReasoningEffortValue(),
           ...customPayload(),
         });
         if (data.ok) {
+          const effort = currentReasoningEffortValue();
+          if (effort) modelReasoningEffort = effort;
           showStatus(data.message || '已保存，请重启 Codex Desktop 生效', 'ok');
           if (isCustom()) {
             p.base_url = document.getElementById('baseUrlInput').value.trim();
@@ -821,7 +922,7 @@
           showStatus(data.message || '已清除', 'ok');
           const boot = await fetch('/admin/settings/bootstrap').then(r => r.json());
           if (!boot.error) {
-            initProviders(boot.providers || [], boot.active);
+            initProviders(boot.providers || [], boot.active, boot.model_reasoning_effort);
           }
           document.getElementById('apiKey').value = '';
         } else {
@@ -841,7 +942,7 @@
           showStatus('加载失败：' + data.error, 'err');
           return;
         }
-        initProviders(data.providers || [], data.active);
+        initProviders(data.providers || [], data.active, data.model_reasoning_effort);
       })
       .catch(e => showStatus('加载失败：' + e.message, 'err'));
   </script>

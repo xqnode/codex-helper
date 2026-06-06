@@ -3,10 +3,9 @@
 //!
 //! Local adaptations:
 //! - Rewrote imports to point at our codex_compat sibling modules (no more
-//!   crate::proxy::sse / crate::proxy::json_canonical / 	ransform_codex_chat).
-//! - Dropped three #[test] cases that depend on cc-switch's full
-//!   uild_codex_tool_context_from_request (namespace / custom / tool_search
-//!   restoration); see in-line // VENDOR-DROPPED: markers.
+//!   crate::proxy::sse / crate::proxy::json_canonical / transform_codex_chat).
+//! - `create_responses_sse_stream_from_chat_with_context` accepts a
+//!   `CodexToolContext` built by `build_codex_tool_context_from_request`.
 
 //! OpenAI Chat Completions SSE → OpenAI Responses SSE conversion.
 
@@ -995,7 +994,9 @@ fn sse_event(event: &str, data: Value) -> Bytes {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proxy::codex_tool_context::build_codex_tool_context_from_request;
     use futures::{stream, StreamExt};
+    use serde_json::json;
 
     async fn collect(chunks: Vec<&str>) -> String {
         collect_with_context(chunks, CodexToolContext::default()).await
@@ -1084,11 +1085,32 @@ mod tests {
         assert!(output.contains("\"call_id\":\"call_1\""));
     }
 
-    // VENDOR-DROPPED: `restores_custom_tool_input_stream_events` exercises
-    // cc-switch's namespace/custom-tool restoration, which depends on the full
-    // `build_codex_tool_context_from_request` (from `transform_codex_chat.rs`).
-    // Our trimmed `CodexToolContext` always falls back to plain function calls,
-    // so this scenario is intentionally not supported.
+    #[tokio::test]
+    async fn restores_custom_tool_input_stream_events() {
+        let request = json!({
+            "tools": [{
+                "type": "custom",
+                "name": "apply_patch",
+                "description": "Apply a patch to files."
+            }]
+        });
+        let context = build_codex_tool_context_from_request(&request);
+        let output = collect_with_context(
+            vec![
+                "data: {\"id\":\"chatcmpl_patch\",\"model\":\"gpt-5.4\",\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_patch\",\"type\":\"function\",\"function\":{\"name\":\"apply_patch\"}}]}}]}\n\n",
+                "data: {\"id\":\"chatcmpl_patch\",\"model\":\"gpt-5.4\",\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"input\\\":\\\"*** Begin Patch\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n",
+                "data: [DONE]\n\n",
+            ],
+            context,
+        )
+        .await;
+
+        assert!(output.contains("event: response.custom_tool_call_input.delta"));
+        assert!(output.contains("event: response.custom_tool_call_input.done"));
+        assert!(output.contains("\"type\":\"custom_tool_call\""));
+        assert!(output.contains("\"input\":\"*** Begin Patch\""));
+        assert!(!output.contains("event: response.function_call_arguments.delta"));
+    }
 
     #[tokio::test]
     async fn canonicalizes_streamed_tool_call_arguments_on_done_events() {
@@ -1118,11 +1140,57 @@ mod tests {
         assert!(output.contains("\"reasoning_content\":\"Need file.\""));
     }
 
-    // VENDOR-DROPPED: `restores_namespace_on_streamed_tool_call_items` and
-    // `restores_tool_search_on_streamed_tool_call_items` rely on the full
-    // `CodexToolContext` populated by cc-switch's `transform_codex_chat`
-    // builder; our trimmed stand-in always treats tools as plain functions, so
-    // both behaviours are intentionally not supported here.
+    #[tokio::test]
+    async fn restores_namespace_on_streamed_tool_call_items() {
+        let request = json!({
+            "tools": [{
+                "type": "namespace",
+                "name": "mcp__codex_apps__gmail",
+                "tools": [{
+                    "type": "function",
+                    "name": "_search_emails",
+                    "parameters": {"type": "object", "properties": {"query": {"type": "string"}}}
+                }]
+            }]
+        });
+        let context = build_codex_tool_context_from_request(&request);
+        let output = collect_with_context(
+            vec![
+                "data: {\"id\":\"chatcmpl_ns\",\"model\":\"gpt-5.4\",\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_ns\",\"type\":\"function\",\"function\":{\"name\":\"mcp__codex_apps__gmail___search_emails\"}}]}}]}\n\n",
+                "data: {\"id\":\"chatcmpl_ns\",\"model\":\"gpt-5.4\",\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"query\\\":\\\"inbox\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n",
+                "data: [DONE]\n\n",
+            ],
+            context,
+        )
+        .await;
+
+        assert!(output.contains("\"type\":\"function_call\""));
+        assert!(output.contains("\"namespace\":\"mcp__codex_apps__gmail\""));
+        assert!(output.contains("\"name\":\"_search_emails\""));
+        assert!(output.contains(r#""arguments":"{\"query\":\"inbox\"}""#));
+    }
+
+    #[tokio::test]
+    async fn restores_tool_search_on_streamed_tool_call_items() {
+        let request = json!({
+            "tools": [{"type": "tool_search"}]
+        });
+        let context = build_codex_tool_context_from_request(&request);
+        let output = collect_with_context(
+            vec![
+                "data: {\"id\":\"chatcmpl_search\",\"model\":\"gpt-5.4\",\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_search\",\"type\":\"function\",\"function\":{\"name\":\"tool_search\"}}]}}]}\n\n",
+                "data: {\"id\":\"chatcmpl_search\",\"model\":\"gpt-5.4\",\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"query\\\":\\\"Gmail search\\\",\\\"limit\\\":5}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n",
+                "data: [DONE]\n\n",
+            ],
+            context,
+        )
+        .await;
+
+        assert!(output.contains("\"type\":\"tool_search_call\""));
+        assert!(output.contains("\"call_id\":\"call_search\""));
+        assert!(output.contains(r#""arguments":{"limit":5,"query":"Gmail search"}"#)
+            || output.contains(r#""arguments":{"query":"Gmail search","limit":5}"#));
+    }
 
     #[tokio::test]
     async fn stream_error_emits_failed_without_completed() {

@@ -1,6 +1,6 @@
 [package]
 name = "codex-helper"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "轻量托盘代理，让 Codex CLI 一键切换 DeepSeek、通义千问等国产大模型"
 license = "MIT"
@@ -22,6 +22,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 toml = "0.8"
