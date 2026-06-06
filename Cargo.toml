@@ -1,6 +1,6 @@
 [package]
 name = "codex-helper"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 description = "轻量托盘代理，让 Codex CLI 一键切换 DeepSeek、通义千问等国产大模型"
 license = "MIT"

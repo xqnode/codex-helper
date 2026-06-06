@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use crate::config::{AppConfig, ProviderConfig};
 use crate::provider::codex_chat_reasoning::supported_reasoning_levels_for_catalog;
-use crate::provider::models::{self, ModelVariant};
+use crate::provider::models::{self};
 use crate::paths;
 
 pub fn resolve_catalog_path() -> anyhow::Result<PathBuf> {
@@ -35,10 +35,10 @@ pub fn catalog_path_string() -> anyhow::Result<String> {
 fn build_merged_catalog(app: &AppConfig) -> anyhow::Result<serde_json::Value> {
     let active = app.active_provider()?;
     let default_reasoning_effort = app.normalized_model_reasoning_effort();
-    let active_variants = models::popular_models(&active.id);
+    let active_variants = models::models_for_provider(active);
     let active_slugs: HashSet<String> = active_variants
         .iter()
-        .map(|variant| variant.slug.to_string())
+        .map(|variant| variant.slug.clone())
         .collect();
 
     let template = load_catalog_template()?;
@@ -52,8 +52,8 @@ fn build_merged_catalog(app: &AppConfig) -> anyhow::Result<serde_json::Value> {
         }
     }
 
-    for variant in active_variants {
-        let slug = variant.slug.to_string();
+    for variant in &active_variants {
+        let slug = variant.slug.clone();
         let is_active = active.default_model == variant.slug;
         let entry = if let Some(mut model) = by_slug.remove(&slug) {
             patch_variant_metadata(&mut model, active, variant, true);
@@ -157,22 +157,22 @@ fn load_catalog_template() -> anyhow::Result<serde_json::Value> {
     }
 
     Ok(minimal_model_entry(
-        &ProviderConfig {
-            id: "template".into(),
-            name: "Template".into(),
-            base_url: String::new(),
-            api_key_env: String::new(),
-            default_model: "deepseek-v4-flash".into(),
-            api_model: String::new(),
-            wire_api: "chat".into(),
-        },
+        &ProviderConfig::new(
+            "template",
+            "Template",
+            "",
+            "",
+            "deepseek-v4-flash",
+            "",
+            "chat",
+        ),
     ))
 }
 
 fn model_from_variant(
     template: &serde_json::Value,
     provider: &ProviderConfig,
-    variant: &ModelVariant,
+    variant: &models::ModelEntry,
 ) -> serde_json::Value {
     let mut model = template.clone();
     patch_variant_metadata(&mut model, provider, variant, false);
@@ -180,22 +180,22 @@ fn model_from_variant(
     model
 }
 
-fn ensure_variant_display_name(model: &mut serde_json::Value, variant: &ModelVariant) {
+fn ensure_variant_display_name(model: &mut serde_json::Value, variant: &models::ModelEntry) {
     if let Some(obj) = model.as_object_mut() {
-        obj.insert("display_name".into(), variant.display_name.into());
+        obj.insert("display_name".into(), variant.display_name.clone().into());
     }
 }
 
 fn patch_variant_metadata(
     model: &mut serde_json::Value,
     provider: &ProviderConfig,
-    variant: &ModelVariant,
+    variant: &models::ModelEntry,
     preserve_labels: bool,
 ) {
     if let Some(obj) = model.as_object_mut() {
-        obj.insert("slug".into(), variant.slug.into());
+        obj.insert("slug".into(), variant.slug.clone().into());
         if !preserve_labels {
-            obj.insert("display_name".into(), variant.display_name.into());
+            obj.insert("display_name".into(), variant.display_name.clone().into());
             obj.insert(
                 "description".into(),
                 format!("{} · {}", variant.display_name, provider.name).into(),

@@ -533,10 +533,10 @@ fn build_menu(app: &AppConfig, health: &ProviderHealth) -> anyhow::Result<Menu> 
             provider_label,
             true,
         );
-        for model in crate::provider::models::popular_models(&preset.id) {
+        for model in crate::provider::models::models_for_provider(preset) {
             let is_active =
                 preset.id == app.active && preset.default_model == model.slug;
-            let label = crate::provider::models::tray_model_label(model, is_active);
+            let label = crate::provider::models::tray_model_label(&model, is_active);
             provider_sub.append(&MenuItem::with_id(
                 format!("use:{}:{}", preset.id, model.slug),
                 label,

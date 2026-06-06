@@ -40,7 +40,7 @@ pub fn sync_builtin_presets(app: &mut crate::config::AppConfig) {
     app.providers.remove("moonshot");
     for preset in presets::builtin_presets() {
         if let Some(existing) = app.providers.get_mut(&preset.id) {
-            if existing.id != "custom" {
+            if existing.id != "custom" && !existing.base_url_customized {
                 existing.base_url = preset.base_url.clone();
             }
             existing.api_key_env = preset.api_key_env.clone();
@@ -69,6 +69,33 @@ mod tests {
         assert_eq!(
             app.providers.get("custom").unwrap().base_url,
             "https://relay.example.com/v1"
+        );
+    }
+
+    #[test]
+    fn sync_preserves_official_base_url_when_customized() {
+        let mut app = AppConfig::default();
+        let deepseek = app.providers.get_mut("deepseek").unwrap();
+        deepseek.base_url = "https://mirror.example.com/v1".into();
+        deepseek.base_url_customized = true;
+        sync_builtin_presets(&mut app);
+        assert_eq!(
+            app.providers.get("deepseek").unwrap().base_url,
+            "https://mirror.example.com/v1"
+        );
+    }
+
+    #[test]
+    fn sync_resets_official_base_url_when_not_customized() {
+        let mut app = AppConfig::default();
+        app.providers
+            .get_mut("deepseek")
+            .unwrap()
+            .base_url = "https://old.example.com/v1".into();
+        sync_builtin_presets(&mut app);
+        assert_eq!(
+            app.providers.get("deepseek").unwrap().base_url,
+            "https://api.deepseek.com/v1"
         );
     }
 

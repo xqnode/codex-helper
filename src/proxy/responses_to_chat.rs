@@ -1343,15 +1343,15 @@ mod tests {
     use super::*;
 
     fn deepseek_provider() -> ProviderConfig {
-        ProviderConfig {
-            id: "deepseek".into(),
-            name: "DeepSeek".into(),
-            base_url: "https://api.deepseek.com/v1".into(),
-            api_key_env: "DEEPSEEK_API_KEY".into(),
-            default_model: "deepseek-v4-pro".into(),
-            api_model: "deepseek-v4-pro".into(),
-            wire_api: "responses".into(),
-        }
+        ProviderConfig::new(
+            "deepseek",
+            "DeepSeek",
+            "https://api.deepseek.com/v1",
+            "DEEPSEEK_API_KEY",
+            "deepseek-v4-pro",
+            "deepseek-v4-pro",
+            "responses",
+        )
     }
 
     fn parse_chat(body: &'static [u8]) -> Value {

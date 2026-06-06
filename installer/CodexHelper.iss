@@ -3,7 +3,7 @@
 ; 或运行 scripts\build-installer.bat
 
 #ifndef MyAppVersion
-  #define MyAppVersion "0.2.1"
+  #define MyAppVersion "0.2.2"
 #endif
 
 #define MyAppName "Codex Helper"

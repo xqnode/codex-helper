@@ -197,6 +197,14 @@
       cursor: default;
     }
 
+    textarea.text-input {
+      height: auto;
+      min-height: 88px;
+      padding: 10px 12px;
+      line-height: 1.45;
+      resize: vertical;
+    }
+
     select.text-input {
       appearance: none;
       padding-right: 36px;
@@ -516,6 +524,11 @@
         <input id="baseUrlInput" class="text-input" type="url" placeholder="https://api.example.com/v1" autocomplete="off" spellcheck="false" />
         <p class="field-foot" id="baseUrlHint">OpenAI 兼容 API 地址，末尾一般带 /v1</p>
       </div>
+      <div class="field hidden" id="customModelsField">
+        <label class="field-label" for="customModelsInput">中转站模型</label>
+        <textarea id="customModelsInput" class="text-input" rows="4" spellcheck="false" placeholder="每行一个模型，例如：&#10;gpt-5.5&#10;gpt-4o|gpt-4o-2024-08-06&#10;展示名|slug|上游模型名"></textarea>
+        <p class="field-foot" id="customModelsHint">保存后写入本地配置，托盘与 Codex 模型列表同步更新</p>
+      </div>
       <div class="field hidden" id="reasoningEffortField">
         <label class="field-label" for="reasoningEffortSelect">推理档位</label>
         <select id="reasoningEffortSelect" class="text-input" aria-label="推理档位"></select>
@@ -601,9 +614,23 @@
       return selectedId === 'custom';
     }
 
-    function customPayload() {
-      if (!isCustom()) return {};
-      return { base_url: document.getElementById('baseUrlInput').value.trim() };
+    function settingsPayload() {
+      const payload = {
+        base_url: document.getElementById('baseUrlInput').value.trim(),
+      };
+      if (isCustom()) {
+        payload.custom_models_text = document.getElementById('customModelsInput').value;
+      }
+      return payload;
+    }
+
+    function baseUrlRequired() {
+      const p = selected();
+      if (!p) return false;
+      if (isCustom()) {
+        return !document.getElementById('baseUrlInput').value.trim() && !p.base_url;
+      }
+      return false;
     }
 
     function updateSubtitle() {
@@ -690,6 +717,7 @@
       hideStatus();
       renderProviderGrid();
       refreshBaseUrlField();
+      refreshCustomModelsField();
       refreshReasoningField();
       refreshKeyField();
       updateSignupLink();
@@ -704,13 +732,26 @@
       const custom = isCustom();
 
       input.value = p?.base_url || '';
-      input.readOnly = !custom;
-      input.classList.toggle('readonly', !custom);
-      input.placeholder = custom ? 'https://api.example.com/v1' : '';
+      input.readOnly = false;
+      input.classList.remove('readonly');
+      input.placeholder = custom ? 'https://api.example.com/v1' : (p?.base_url || 'https://api.example.com/v1');
 
       hint.textContent = custom
-        ? '中转站 API 地址，末尾一般带 /v1'
-        : '官方地址（只读）';
+        ? '中转站 API 地址，末尾一般带 /v1；保存后永久写入本地'
+        : '可改为镜像/代理地址；保存后永久写入本地，留空则恢复官方默认';
+    }
+
+    function refreshCustomModelsField() {
+      const field = document.getElementById('customModelsField');
+      const input = document.getElementById('customModelsInput');
+      const p = selected();
+      const custom = isCustom();
+      field.classList.toggle('hidden', !custom);
+      if (!custom) {
+        input.value = '';
+        return;
+      }
+      input.value = p?.custom_models_text || '';
     }
 
     function updateSignupLink() {
@@ -764,6 +805,7 @@
       updateSignupLink();
       updateKeyBadge(!!selected()?.key_configured);
       refreshBaseUrlField();
+      refreshCustomModelsField();
       refreshReasoningField();
       refreshKeyField();
     }
@@ -772,6 +814,8 @@
       hideStatus();
       if (isCustom()) refreshReasoningField();
     });
+
+    document.getElementById('customModelsInput').addEventListener('input', () => hideStatus());
 
     document.getElementById('reasoningEffortSelect').addEventListener('change', () => hideStatus());
 
@@ -841,7 +885,7 @@
         showStatus('请先粘贴 API Key', 'err');
         return;
       }
-      if (isCustom() && !document.getElementById('baseUrlInput').value.trim() && !p.base_url) {
+      if (baseUrlRequired()) {
         showStatus('请填写 Base URL', 'err');
         return;
       }
@@ -851,7 +895,7 @@
         const data = await api('/admin/settings/test', {
           provider_id: p.id,
           api_key: key,
-          ...customPayload(),
+          ...settingsPayload(),
         });
         showStatus(data.message || (data.ok ? '连接成功' : '连接失败'), data.ok ? 'ok' : 'err');
       } catch (e) {
@@ -868,7 +912,7 @@
         showStatus('请先粘贴 API Key', 'err');
         return;
       }
-      if (isCustom() && !document.getElementById('baseUrlInput').value.trim() && !p.base_url) {
+      if (baseUrlRequired()) {
         showStatus('请填写 Base URL', 'err');
         return;
       }
@@ -883,14 +927,16 @@
           provider_id: p.id,
           api_key: key,
           model_reasoning_effort: currentReasoningEffortValue(),
-          ...customPayload(),
+          ...settingsPayload(),
         });
         if (data.ok) {
           const effort = currentReasoningEffortValue();
           if (effort) modelReasoningEffort = effort;
           showStatus(data.message || '已保存，请重启 Codex Desktop 生效', 'ok');
+          p.base_url = document.getElementById('baseUrlInput').value.trim() || p.base_url;
+          p.base_url_customized = !!p.base_url;
           if (isCustom()) {
-            p.base_url = document.getElementById('baseUrlInput').value.trim();
+            p.custom_models_text = document.getElementById('customModelsInput').value;
           }
           if (key) {
             p.key_configured = true;

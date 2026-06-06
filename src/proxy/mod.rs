@@ -657,27 +657,27 @@ mod tests {
     use super::*;
 
     fn deepseek_provider() -> config::ProviderConfig {
-        config::ProviderConfig {
-            id: "deepseek".into(),
-            name: "DeepSeek".into(),
-            base_url: "https://api.deepseek.com/v1".into(),
-            api_key_env: "DEEPSEEK_API_KEY".into(),
-            default_model: "deepseek-v4-flash".into(),
-            api_model: "deepseek-v4-flash".into(),
-            wire_api: "responses".into(),
-        }
+        config::ProviderConfig::new(
+            "deepseek",
+            "DeepSeek",
+            "https://api.deepseek.com/v1",
+            "DEEPSEEK_API_KEY",
+            "deepseek-v4-flash",
+            "deepseek-v4-flash",
+            "responses",
+        )
     }
 
     fn qwen_provider() -> config::ProviderConfig {
-        config::ProviderConfig {
-            id: "qwen".into(),
-            name: "千问".into(),
-            base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1".into(),
-            api_key_env: "DASHSCOPE_API_KEY".into(),
-            default_model: "qwen3.7-max".into(),
-            api_model: "qwen3.7-max".into(),
-            wire_api: "responses".into(),
-        }
+        config::ProviderConfig::new(
+            "qwen",
+            "千问",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "DASHSCOPE_API_KEY",
+            "qwen3.7-max",
+            "qwen3.7-max",
+            "responses",
+        )
     }
 
     #[test]
@@ -722,15 +722,15 @@ mod tests {
         let body = br#"{"model":"deepseek-v4-flash","messages":[{"role":"developer","content":[{"type":"input_text","text":"hi"}]}]}"#;
         let out = normalize_upstream_body(
             &axum::body::Bytes::from_static(body),
-            &config::ProviderConfig {
-                id: "deepseek".into(),
-                name: "DeepSeek".into(),
-                base_url: "https://api.deepseek.com/v1".into(),
-                api_key_env: "DEEPSEEK_API_KEY".into(),
-                default_model: "deepseek-v4-flash".into(),
-                api_model: "deepseek-v4-flash".into(),
-                wire_api: "responses".into(),
-            },
+            &config::ProviderConfig::new(
+                "deepseek",
+                "DeepSeek",
+                "https://api.deepseek.com/v1",
+                "DEEPSEEK_API_KEY",
+                "deepseek-v4-flash",
+                "deepseek-v4-flash",
+                "responses",
+            ),
             0,
         );
         let v: serde_json::Value = serde_json::from_slice(&out).unwrap();

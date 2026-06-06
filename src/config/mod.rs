@@ -52,9 +52,54 @@ pub struct ProviderConfig {
     #[serde(default)]
     pub api_model: String,
     pub wire_api: String,
+    /// 用户是否在设置页改过 Base URL（为 true 时 sync 不再覆盖为官方默认）。
+    #[serde(default)]
+    pub base_url_customized: bool,
+    /// 中转站自定义模型；为空时使用内置 OpenAI 兼容模型列表。
+    #[serde(default)]
+    pub custom_models: Vec<CustomModelEntry>,
+}
+
+/// 用户在中转站设置里手动添加的模型。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CustomModelEntry {
+    /// Codex catalog / config 使用的 slug
+    pub slug: String,
+    /// 发往上游 API 的 model 名
+    pub api_model: String,
+    #[serde(default)]
+    pub display_name: String,
+    #[serde(default = "default_custom_model_context_window")]
+    pub context_window: u32,
+}
+
+fn default_custom_model_context_window() -> u32 {
+    128_000
 }
 
 impl ProviderConfig {
+    pub fn new(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        base_url: impl Into<String>,
+        api_key_env: impl Into<String>,
+        default_model: impl Into<String>,
+        api_model: impl Into<String>,
+        wire_api: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            base_url: base_url.into(),
+            api_key_env: api_key_env.into(),
+            default_model: default_model.into(),
+            api_model: api_model.into(),
+            wire_api: wire_api.into(),
+            base_url_customized: false,
+            custom_models: Vec::new(),
+        }
+    }
+
     pub fn catalog_model(&self) -> &str {
         &self.default_model
     }

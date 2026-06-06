@@ -200,15 +200,7 @@ mod tests {
     use super::*;
 
     fn provider(id: &str, base_url: &str) -> ProviderConfig {
-        ProviderConfig {
-            id: id.into(),
-            name: id.into(),
-            base_url: base_url.into(),
-            api_key_env: "KEY".into(),
-            default_model: "model".into(),
-            api_model: "model".into(),
-            wire_api: "responses".into(),
-        }
+        ProviderConfig::new(id, id, base_url, "KEY", "model", "model", "responses")
     }
 
     #[test]

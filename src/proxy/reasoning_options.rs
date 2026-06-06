@@ -173,51 +173,51 @@ mod tests {
     use super::*;
 
     fn deepseek() -> ProviderConfig {
-        ProviderConfig {
-            id: "deepseek".into(),
-            name: "DeepSeek".into(),
-            base_url: "https://api.deepseek.com/v1".into(),
-            api_key_env: "DEEPSEEK_API_KEY".into(),
-            default_model: "deepseek-v4-pro".into(),
-            api_model: "deepseek-v4-pro".into(),
-            wire_api: "responses".into(),
-        }
+        ProviderConfig::new(
+            "deepseek",
+            "DeepSeek",
+            "https://api.deepseek.com/v1",
+            "DEEPSEEK_API_KEY",
+            "deepseek-v4-pro",
+            "deepseek-v4-pro",
+            "responses",
+        )
     }
 
     fn minimax() -> ProviderConfig {
-        ProviderConfig {
-            id: "minimax".into(),
-            name: "Minimax".into(),
-            base_url: "https://api.minimaxi.com/v1".into(),
-            api_key_env: "MINIMAX_API_KEY".into(),
-            default_model: "minimax-m3".into(),
-            api_model: "MiniMax-M3".into(),
-            wire_api: "responses".into(),
-        }
+        ProviderConfig::new(
+            "minimax",
+            "Minimax",
+            "https://api.minimaxi.com/v1",
+            "MINIMAX_API_KEY",
+            "minimax-m3",
+            "MiniMax-M3",
+            "responses",
+        )
     }
 
     fn kimi() -> ProviderConfig {
-        ProviderConfig {
-            id: "kimi".into(),
-            name: "Kimi".into(),
-            base_url: "https://api.moonshot.cn/v1".into(),
-            api_key_env: "MOONSHOT_API_KEY".into(),
-            default_model: "kimi-k2.6".into(),
-            api_model: "kimi-k2.6".into(),
-            wire_api: "responses".into(),
-        }
+        ProviderConfig::new(
+            "kimi",
+            "Kimi",
+            "https://api.moonshot.cn/v1",
+            "MOONSHOT_API_KEY",
+            "kimi-k2.6",
+            "kimi-k2.6",
+            "responses",
+        )
     }
 
     fn openrouter_custom() -> ProviderConfig {
-        ProviderConfig {
-            id: "custom".into(),
-            name: "OpenRouter".into(),
-            base_url: "https://openrouter.ai/api/v1".into(),
-            api_key_env: "OPENROUTER_API_KEY".into(),
-            default_model: "gpt-5.4".into(),
-            api_model: "gpt-5.4".into(),
-            wire_api: "responses".into(),
-        }
+        ProviderConfig::new(
+            "custom",
+            "OpenRouter",
+            "https://openrouter.ai/api/v1",
+            "OPENROUTER_API_KEY",
+            "gpt-5.4",
+            "gpt-5.4",
+            "responses",
+        )
     }
 
     #[test]
@@ -304,39 +304,39 @@ mod tests {
     }
 
     fn zhipu() -> ProviderConfig {
-        ProviderConfig {
-            id: "zhipu".into(),
-            name: "智谱".into(),
-            base_url: "https://open.bigmodel.cn/api/paas/v4".into(),
-            api_key_env: "ZHIPU_API_KEY".into(),
-            default_model: "glm-5.1".into(),
-            api_model: "glm-5.1".into(),
-            wire_api: "responses".into(),
-        }
+        ProviderConfig::new(
+            "zhipu",
+            "智谱",
+            "https://open.bigmodel.cn/api/paas/v4",
+            "ZHIPU_API_KEY",
+            "glm-5.1",
+            "glm-5.1",
+            "responses",
+        )
     }
 
     fn qwen() -> ProviderConfig {
-        ProviderConfig {
-            id: "qwen".into(),
-            name: "千问".into(),
-            base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1".into(),
-            api_key_env: "DASHSCOPE_API_KEY".into(),
-            default_model: "qwen3.7-max".into(),
-            api_model: "qwen3.7-max".into(),
-            wire_api: "responses".into(),
-        }
+        ProviderConfig::new(
+            "qwen",
+            "千问",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "DASHSCOPE_API_KEY",
+            "qwen3.7-max",
+            "qwen3.7-max",
+            "responses",
+        )
     }
 
     fn mimo() -> ProviderConfig {
-        ProviderConfig {
-            id: "mimo".into(),
-            name: "小米 MiMo".into(),
-            base_url: "https://api.xiaomimimo.com/v1".into(),
-            api_key_env: "MIMO_API_KEY".into(),
-            default_model: "mimo-v2.5-pro".into(),
-            api_model: "mimo-v2.5-pro".into(),
-            wire_api: "responses".into(),
-        }
+        ProviderConfig::new(
+            "mimo",
+            "小米 MiMo",
+            "https://api.xiaomimimo.com/v1",
+            "MIMO_API_KEY",
+            "mimo-v2.5-pro",
+            "mimo-v2.5-pro",
+            "responses",
+        )
     }
 
     #[test]

@@ -1,14 +1,16 @@
 use axum::extract::State;
-use axum::response::{Html, IntoResponse, Json};
 use axum::http::{header, HeaderMap, HeaderValue};
+use axum::response::{Html, IntoResponse, Json};
 use serde::Deserialize;
 
 use crate::codex;
-use crate::config::{self, AppConfig};
+use crate::config::{self, AppConfig, ProviderConfig};
 use crate::provider;
 use crate::provider::codex_chat_reasoning::{
     provider_supports_reasoning_effort_levels, supported_reasoning_levels_for_catalog,
 };
+use crate::provider::models;
+use crate::provider::presets;
 use crate::proxy::{reload_config_in_state, request_tray_health_check, ProxyState};
 use crate::settings;
 
@@ -65,7 +67,13 @@ pub async fn settings_bootstrap() -> impl IntoResponse {
             "key_configured": key_preview.is_some(),
             "key_preview": key_preview,
             "base_url": preset.base_url,
+            "base_url_customized": preset.base_url_customized,
             "is_custom": preset.id == "custom",
+            "custom_models_text": if preset.id == "custom" {
+                models::custom_models_to_text(&preset.custom_models)
+            } else {
+                String::new()
+            },
             "supports_reasoning_effort_levels": supports_reasoning_effort,
             "supported_reasoning_levels": supported_reasoning_levels_for_catalog(preset),
         }));
@@ -88,6 +96,8 @@ pub struct SettingsSaveBody {
     base_url: String,
     #[serde(default)]
     model_reasoning_effort: String,
+    #[serde(default)]
+    custom_models_text: String,
 }
 
 pub async fn settings_save(
@@ -100,6 +110,7 @@ pub async fn settings_save(
         body.api_key.trim(),
         body.base_url.trim(),
         body.model_reasoning_effort.trim(),
+        body.custom_models_text.as_str(),
     )
     .await
     {
@@ -123,7 +134,10 @@ pub struct SettingsTestBody {
     api_key: String,
     #[serde(default)]
     base_url: String,
+    #[serde(default)]
+    custom_models_text: String,
 }
+
 pub async fn settings_test(Json(body): Json<SettingsTestBody>) -> impl IntoResponse {
     let app = match AppConfig::load() {
         Ok(a) => a,
@@ -147,7 +161,15 @@ pub async fn settings_test(Json(body): Json<SettingsTestBody>) -> impl IntoRespo
         }
     };
 
-    if let Err(err) = apply_custom_base_url(&mut provider, body.base_url.trim()) {
+    if let Err(err) = apply_provider_base_url(&mut provider, body.base_url.trim()) {
+        return Json(serde_json::json!({
+            "ok": false,
+            "message": format!("{err:#}"),
+        }))
+        .into_response();
+    }
+
+    if let Err(err) = apply_custom_models_from_text(&mut provider, body.custom_models_text.as_str()) {
         return Json(serde_json::json!({
             "ok": false,
             "message": format!("{err:#}"),
@@ -201,7 +223,7 @@ async fn clear_all_settings(state: &ProxyState) -> anyhow::Result<String> {
     state.request_log.clear().await;
     request_tray_health_check(state);
     Ok(
-        "已清除所有 Helper 配置（API Key、厂商选择、中转站地址）。请重新填写 Key 并重启 Codex Desktop。"
+        "已清除所有 Helper 配置（API Key、厂商选择、Base URL、中转站模型）。请重新填写 Key 并重启 Codex Desktop。"
             .into(),
     )
 }
@@ -212,6 +234,7 @@ async fn save_api_key(
     api_key: &str,
     base_url: &str,
     model_reasoning_effort: &str,
+    custom_models_text: &str,
 ) -> anyhow::Result<String> {
     let mut app = AppConfig::load()?;
     provider::get_preset(&app, provider_id)?;
@@ -220,7 +243,8 @@ async fn save_api_key(
         .get_mut(provider_id)
         .ok_or_else(|| anyhow::anyhow!("未知模型预设: {provider_id}"))?;
 
-    apply_custom_base_url(provider_cfg, base_url)?;
+    apply_provider_base_url(provider_cfg, base_url)?;
+    apply_custom_models_from_text(provider_cfg, custom_models_text)?;
 
     let provider = provider_cfg.clone();
     if provider_supports_reasoning_effort_levels(&provider) {
@@ -247,24 +271,67 @@ async fn save_api_key(
     ))
 }
 
-fn apply_custom_base_url(
-    provider: &mut config::ProviderConfig,
+fn builtin_base_url(provider_id: &str) -> String {
+    presets::builtin_presets()
+        .into_iter()
+        .find(|preset| preset.id == provider_id)
+        .map(|preset| preset.base_url)
+        .unwrap_or_default()
+}
+
+fn apply_provider_base_url(
+    provider: &mut ProviderConfig,
     base_url: &str,
+) -> anyhow::Result<()> {
+    let default_url = builtin_base_url(&provider.id);
+
+    if provider.id == "custom" {
+        if base_url.is_empty() && provider.base_url.trim().is_empty() {
+            anyhow::bail!("请填写 Base URL");
+        }
+        if !base_url.is_empty() {
+            provider.base_url = config::validate_base_url(base_url)?;
+        }
+        provider.base_url_customized = true;
+        return Ok(());
+    }
+
+    if base_url.is_empty() {
+        provider.base_url = default_url;
+        provider.base_url_customized = false;
+        return Ok(());
+    }
+
+    provider.base_url = config::validate_base_url(base_url)?;
+    provider.base_url_customized = provider.base_url != default_url;
+    Ok(())
+}
+
+fn apply_custom_models_from_text(
+    provider: &mut ProviderConfig,
+    custom_models_text: &str,
 ) -> anyhow::Result<()> {
     if provider.id != "custom" {
         return Ok(());
     }
-    if base_url.is_empty() && provider.base_url.trim().is_empty() {
-        anyhow::bail!("请填写 Base URL");
+
+    if custom_models_text.trim().is_empty() {
+        provider.custom_models.clear();
+        models::ensure_valid_model(provider);
+        return Ok(());
     }
-    if !base_url.is_empty() {
-        provider.base_url = config::validate_base_url(base_url)?;
+
+    let parsed = models::parse_custom_models_text(custom_models_text)?;
+    if parsed.is_empty() {
+        anyhow::bail!("请至少填写一个中转站模型");
     }
+    provider.custom_models = parsed;
+    models::ensure_valid_model(provider);
     Ok(())
 }
 
 fn resolve_key_for_request(
-    provider: &config::ProviderConfig,
+    provider: &ProviderConfig,
     api_key: &str,
 ) -> anyhow::Result<String> {
     if !api_key.is_empty() {
@@ -273,12 +340,15 @@ fn resolve_key_for_request(
     config::resolve_api_key(&provider.api_key_env)
 }
 
-pub async fn test_api_key(provider: &config::ProviderConfig, api_key: &str) -> anyhow::Result<()> {
+pub async fn test_api_key(provider: &ProviderConfig, api_key: &str) -> anyhow::Result<()> {
     if api_key.is_empty() {
         anyhow::bail!("API Key 不能为空");
     }
     if provider.id == "custom" && provider.base_url.trim().is_empty() {
         anyhow::bail!("请填写 Base URL");
+    }
+    if provider.id == "custom" && models::models_for_provider(provider).is_empty() {
+        anyhow::bail!("请至少填写一个中转站模型");
     }
 
     let client = config::build_upstream_client(std::time::Duration::from_secs(30))?;

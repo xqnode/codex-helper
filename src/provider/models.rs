@@ -1,3 +1,12 @@
+#[derive(Debug, Clone)]
+pub struct ModelEntry {
+    pub slug: String,
+    pub display_name: String,
+    pub api_model: String,
+    pub context_window: u32,
+    pub menu_tag: String,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ModelVariant {
     pub slug: &'static str,
@@ -21,6 +30,29 @@ pub fn popular_models(provider_id: &str) -> &'static [ModelVariant] {
     }
 }
 
+pub fn models_for_provider(provider: &crate::config::ProviderConfig) -> Vec<ModelEntry> {
+    if provider.id == "custom" && !provider.custom_models.is_empty() {
+        return provider
+            .custom_models
+            .iter()
+            .map(custom_model_to_entry)
+            .collect();
+    }
+    popular_models(&provider.id)
+        .iter()
+        .map(variant_to_entry)
+        .collect()
+}
+
+pub fn find_model_entry(
+    provider: &crate::config::ProviderConfig,
+    slug: &str,
+) -> Option<ModelEntry> {
+    models_for_provider(provider)
+        .into_iter()
+        .find(|m| m.slug == slug)
+}
+
 pub fn find_model(provider_id: &str, slug: &str) -> Option<&'static ModelVariant> {
     popular_models(provider_id)
         .iter()
@@ -28,8 +60,8 @@ pub fn find_model(provider_id: &str, slug: &str) -> Option<&'static ModelVariant
 }
 
 /// 托盘菜单用的型号简称（如 flash、pro）。
-pub fn menu_tag(provider: &crate::config::ProviderConfig) -> Option<&'static str> {
-    find_model(&provider.id, &provider.default_model).map(|m| m.menu_tag)
+pub fn menu_tag(provider: &crate::config::ProviderConfig) -> Option<String> {
+    find_model_entry(provider, &provider.default_model).map(|m| m.menu_tag)
 }
 
 /// 托盘菜单用，如 1M、256K。
@@ -43,7 +75,7 @@ pub fn format_context_window(tokens: u32) -> String {
     }
 }
 
-pub fn tray_model_label(model: &ModelVariant, active: bool) -> String {
+pub fn tray_model_label(model: &ModelEntry, active: bool) -> String {
     let label = format!(
         "{} · {}",
         model.display_name,
@@ -54,6 +86,137 @@ pub fn tray_model_label(model: &ModelVariant, active: bool) -> String {
     } else {
         label
     }
+}
+
+fn variant_to_entry(variant: &ModelVariant) -> ModelEntry {
+    ModelEntry {
+        slug: variant.slug.to_string(),
+        display_name: variant.display_name.to_string(),
+        api_model: variant.api_model.to_string(),
+        context_window: variant.context_window,
+        menu_tag: variant.menu_tag.to_string(),
+    }
+}
+
+fn custom_model_to_entry(entry: &crate::config::CustomModelEntry) -> ModelEntry {
+    let display_name = if entry.display_name.trim().is_empty() {
+        entry.slug.clone()
+    } else {
+        entry.display_name.clone()
+    };
+    let menu_tag = entry
+        .slug
+        .split('-')
+        .next_back()
+        .unwrap_or(entry.slug.as_str())
+        .to_string();
+    ModelEntry {
+        slug: entry.slug.clone(),
+        display_name,
+        api_model: entry.api_model.clone(),
+        context_window: entry.context_window,
+        menu_tag,
+    }
+}
+
+pub fn custom_models_to_text(entries: &[crate::config::CustomModelEntry]) -> String {
+    entries
+        .iter()
+        .map(|entry| {
+            let display = if entry.display_name.trim().is_empty() {
+                entry.slug.as_str()
+            } else {
+                entry.display_name.as_str()
+            };
+            if entry.api_model != entry.slug {
+                if display != entry.slug.as_str() {
+                    format!("{}|{}|{}", display, entry.slug, entry.api_model)
+                } else {
+                    format!("{}|{}", entry.slug, entry.api_model)
+                }
+            } else if display != entry.slug.as_str() {
+                format!("{}|{}", display, entry.slug)
+            } else {
+                entry.slug.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+pub fn parse_custom_models_text(text: &str) -> anyhow::Result<Vec<crate::config::CustomModelEntry>> {
+    let mut models = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let entry = parse_custom_model_line(line).ok_or_else(|| {
+            anyhow::anyhow!("第 {} 行格式无效: {line}", index + 1)
+        })?;
+        if models.iter().any(|m: &crate::config::CustomModelEntry| m.slug == entry.slug) {
+            anyhow::bail!("模型 slug 重复: {}", entry.slug);
+        }
+        models.push(entry);
+    }
+    Ok(models)
+}
+
+fn parse_custom_model_line(line: &str) -> Option<crate::config::CustomModelEntry> {
+    let parts: Vec<&str> = line
+        .split('|')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect();
+    let entry = match parts.len() {
+        1 => {
+            let slug = normalize_model_slug(parts[0])?;
+            crate::config::CustomModelEntry {
+                slug: slug.clone(),
+                api_model: slug.clone(),
+                display_name: slug,
+                context_window: default_custom_context_window(),
+            }
+        }
+        2 => {
+            let slug = normalize_model_slug(parts[0])?;
+            crate::config::CustomModelEntry {
+                slug: slug.clone(),
+                api_model: parts[1].to_string(),
+                display_name: slug,
+                context_window: default_custom_context_window(),
+            }
+        }
+        3 => {
+            let slug = normalize_model_slug(parts[1])?;
+            crate::config::CustomModelEntry {
+                display_name: parts[0].to_string(),
+                slug: slug.clone(),
+                api_model: parts[2].to_string(),
+                context_window: default_custom_context_window(),
+            }
+        }
+        _ => return None,
+    };
+    Some(entry)
+}
+
+fn normalize_model_slug(raw: &str) -> Option<String> {
+    let slug = raw.trim();
+    if slug.is_empty() {
+        return None;
+    }
+    if !slug
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+    {
+        return None;
+    }
+    Some(slug.to_string())
+}
+
+fn default_custom_context_window() -> u32 {
+    128_000
 }
 
 const DEEPSEEK_MODELS: &[ModelVariant] = &[
@@ -186,11 +349,11 @@ pub fn apply_model_variant(
     provider: &mut crate::config::ProviderConfig,
     slug: &str,
 ) -> anyhow::Result<()> {
-    let variant = find_model(&provider.id, slug).ok_or_else(|| {
+    let entry = find_model_entry(provider, slug).ok_or_else(|| {
         anyhow::anyhow!("未知模型: {slug}")
     })?;
-    provider.default_model = variant.slug.to_string();
-    provider.api_model = variant.api_model.to_string();
+    provider.default_model = entry.slug;
+    provider.api_model = entry.api_model;
     Ok(())
 }
 
@@ -216,17 +379,23 @@ fn migrate_legacy_model_slug(provider: &mut crate::config::ProviderConfig) {
 
 pub fn ensure_valid_model(provider: &mut crate::config::ProviderConfig) {
     migrate_legacy_model_slug(provider);
-    if find_model(&provider.id, &provider.default_model).is_some() {
+    if find_model_entry(provider, &provider.default_model).is_some() {
+        if let Some(entry) = find_model_entry(provider, &provider.default_model) {
+            provider.api_model = entry.api_model;
+        }
         return;
     }
-    if let Some(first) = popular_models(&provider.id).first() {
-        provider.default_model = first.slug.to_string();
-        provider.api_model = first.api_model.to_string();
+    if let Some(first) = models_for_provider(provider).first() {
+        provider.default_model = first.slug.clone();
+        provider.api_model = first.api_model.clone();
     }
 }
 
 pub fn sync_model_metadata(provider: &mut crate::config::ProviderConfig) {
     ensure_valid_model(provider);
+    if provider.id == "custom" && !provider.custom_models.is_empty() {
+        return;
+    }
     if let Some(variant) = find_model(&provider.id, &provider.default_model) {
         provider.api_model = variant.api_model.to_string();
     }
@@ -238,15 +407,7 @@ mod tests {
     use crate::config::ProviderConfig;
 
     fn provider(id: &str, model: &str) -> ProviderConfig {
-        ProviderConfig {
-            id: id.into(),
-            name: id.into(),
-            base_url: "https://example.com/v1".into(),
-            api_key_env: "KEY".into(),
-            default_model: model.into(),
-            api_model: model.into(),
-            wire_api: "responses".into(),
-        }
+        ProviderConfig::new(id, id, "https://example.com/v1", "KEY", model, model, "responses")
     }
 
     #[test]
@@ -268,13 +429,39 @@ mod tests {
 
     #[test]
     fn tray_model_label_includes_context() {
-        let model = find_model("deepseek", "deepseek-v4-flash").unwrap();
+        let model = variant_to_entry(find_model("deepseek", "deepseek-v4-flash").unwrap());
         assert_eq!(
-            tray_model_label(model, true),
+            tray_model_label(&model, true),
             "✓ DeepSeek V4 Flash · 1M"
         );
-        let glm = find_model("zhipu", "glm-5.1").unwrap();
-        assert_eq!(tray_model_label(glm, false), "GLM-5.1（旗舰） · 200K");
+        let glm = variant_to_entry(find_model("zhipu", "glm-5.1").unwrap());
+        assert_eq!(tray_model_label(&glm, false), "GLM-5.1（旗舰） · 200K");
+    }
+
+    #[test]
+    fn parse_custom_models_text_supports_multiple_formats() {
+        let models = parse_custom_models_text(
+            "gpt-5.5\ngpt-4o|gpt-4o-2024-08-06\nGPT-5.4|gpt-5.4|gpt-5.4",
+        )
+        .unwrap();
+        assert_eq!(models.len(), 3);
+        assert_eq!(models[0].slug, "gpt-5.5");
+        assert_eq!(models[1].api_model, "gpt-4o-2024-08-06");
+        assert_eq!(models[2].display_name, "GPT-5.4");
+    }
+
+    #[test]
+    fn models_for_provider_uses_custom_models_when_present() {
+        let mut provider = provider("custom", "gpt-5.5");
+        provider.custom_models = vec![crate::config::CustomModelEntry {
+            slug: "my-model".into(),
+            api_model: "upstream-id".into(),
+            display_name: "My Model".into(),
+            context_window: 256_000,
+        }];
+        let models = models_for_provider(&provider);
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].api_model, "upstream-id");
     }
 
     #[test]
