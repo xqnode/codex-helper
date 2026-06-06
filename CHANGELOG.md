@@ -7,6 +7,18 @@
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-06-06
+
+### 修复
+
+- **Computer Use 修复**：扩展 `codex.exe` 发现路径（`~/.codex` 全目录、PATH、Windows 商店 `WindowsApps`、macOS `/Applications/Codex.app`），减少「找不到 Codex CLI」误报
+- **错误提示**：按「未装 Desktop / 未打开过 / 路径异常」区分说明，不再误导用户运行 `codex-helper init`
+- `doctor` 增加 Codex CLI 定位状态；README 补充对应 FAQ
+
+### 变更
+
+- Windows 一键发版脚本 `scripts/release-windows.ps1`（构建 ZIP + Setup → 打 tag → 上传 GitHub Release）
+
 ## [0.2.0] - 2026-06-06
 
 ### 新增

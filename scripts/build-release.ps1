@@ -28,6 +28,18 @@ function Find-Iscc {
     ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 }
 
+function Ensure-InnoChineseLanguage {
+    $iscc = Find-Iscc
+    if (-not $iscc) { return $false }
+    $langDir = Join-Path (Split-Path $iscc -Parent) 'Languages'
+    $isl = Join-Path $langDir 'ChineseSimplified.isl'
+    if (-not (Test-Path $isl)) {
+        New-Item -ItemType Directory -Force -Path $langDir | Out-Null
+        Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/jrsoftware/issrc/master/Files/Languages/Unofficial/ChineseSimplified.isl' -OutFile $isl
+    }
+    return $true
+}
+
 $Version = Get-ProjectVersion
 Write-Host "Codex Helper v$Version"
 
@@ -74,12 +86,14 @@ if (-not $ZipOnly) {
     if (-not $iscc) {
         throw @"
 Inno Setup 6 (ISCC.exe) not found.
-Install from: https://jrsoftware.org/isinfo.php
+Install from: https://jrsoftware.org/isdl.php
 Expected paths:
   $env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe
   ${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe
 "@
     }
+
+    Ensure-InnoChineseLanguage | Out-Null
 
     Write-Host "Building Setup with: $iscc"
     & $iscc "/DMyAppVersion=$Version" $IssPath

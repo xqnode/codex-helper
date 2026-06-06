@@ -11,6 +11,11 @@ const MARKETPLACE_NAME: &str = "computer-use-local";
 const PLUGIN_SELECTOR: &str = "computer-use@computer-use-local";
 const STALE_PLUGIN_KEY: &str = "computer-use@openai-bundled";
 
+#[cfg(windows)]
+const CLI_BINARY_NAME: &str = "codex.exe";
+#[cfg(not(windows))]
+const CLI_BINARY_NAME: &str = "codex";
+
 const MARKETPLACE_JSON: &str = r#"{
   "name": "computer-use-local",
   "interface": {
@@ -38,14 +43,13 @@ pub fn is_installed() -> bool {
 }
 
 pub fn repair() -> anyhow::Result<()> {
-    let codex_cli = find_codex_cli().ok_or_else(|| {
-        anyhow::anyhow!(
-            "找不到 Codex CLI。请先打开一次 Codex Desktop，或运行 codex-helper init 后再试"
-        )
-    })?;
+    let codex_cli = find_codex_cli().ok_or_else(codex_cli_missing_error)?;
     let plugin_source = find_bundled_plugin_source(&codex_cli).ok_or_else(|| {
         anyhow::anyhow!(
-            "找不到内置 computer-use 插件。请确认 Codex Desktop 已安装且版本支持 Computer Use"
+            "已找到 Codex CLI，但缺少内置 computer-use 插件。\n\n\
+             路径: {}\n\n\
+             请更新 Codex Desktop 到支持 Computer Use 的版本后重试。",
+            codex_cli.display()
         )
     })?;
 
@@ -163,9 +167,141 @@ fn load_config_table() -> anyhow::Result<Map<String, toml::Value>> {
 }
 
 pub fn find_codex_cli() -> Option<PathBuf> {
-    read_codex_cli_from_config()
-        .or_else(discover_codex_cli_from_patched_install)
-        .filter(|path| path.is_file())
+    let mut candidates = Vec::new();
+    if let Some(path) = read_codex_cli_from_config() {
+        candidates.push(path);
+    }
+    discover_codex_home_candidates(&mut candidates);
+    discover_path_candidates(&mut candidates);
+    #[cfg(windows)]
+    discover_windows_store_candidates(&mut candidates);
+    #[cfg(not(windows))]
+    discover_macos_app_candidates(&mut candidates);
+    pick_best_codex_cli(candidates)
+}
+
+/// 供 doctor / 托盘提示：是否能在本机定位到 codex.exe。
+pub fn codex_cli_available() -> bool {
+    find_codex_cli().is_some()
+}
+
+fn codex_cli_missing_error() -> anyhow::Error {
+    let config_path = paths::codex_config_path().ok();
+    let config_exists = config_path.as_ref().is_some_and(|p| p.exists());
+    let node_repl = crate::codex::read_node_repl_mcp_configured();
+
+    let mut msg = format!("找不到 Codex CLI（{CLI_BINARY_NAME}）。\n\n");
+    if !config_exists {
+        msg.push_str("尚未检测到 ~/.codex/config.toml。\n");
+        msg.push_str("请先安装 Codex Desktop，并完整打开一次后再点「修复 Computer Use」。\n");
+    } else if !node_repl {
+        msg.push_str("config.toml 里还没有 [mcp_servers.node_repl]。\n");
+        msg.push_str("请先完整打开并退出一次 Codex Desktop（由 Desktop 写入 node_repl 路径），再重试。\n");
+    } else {
+        msg.push_str("Desktop 已写入 node_repl，但本机未在常见路径找到 codex.exe。\n");
+        msg.push_str("若使用微软商店版，请更新 Codex Helper 到最新版后重试。\n");
+    }
+    msg.push_str("\n说明：仅安装 Codex Helper 不够，必须先安装并运行过 Codex Desktop。");
+    anyhow::anyhow!(msg)
+}
+
+fn pick_best_codex_cli(candidates: Vec<PathBuf>) -> Option<PathBuf> {
+    let mut unique = Vec::new();
+    for path in candidates {
+        if !path.is_file() {
+            continue;
+        }
+        let normalized = normalize_existing_path(&path);
+        if unique.iter().any(|existing| existing == &normalized) {
+            continue;
+        }
+        unique.push(normalized);
+    }
+    unique.into_iter().max_by_key(|path| codex_cli_candidate_score(path))
+}
+
+fn codex_cli_candidate_score(path: &Path) -> (u8, usize) {
+    let has_plugin = find_bundled_plugin_source(path).is_some();
+    let from_config = read_codex_cli_from_config()
+        .is_some_and(|configured| normalize_existing_path(&configured) == normalize_existing_path(path));
+    let score = u8::from(has_plugin) * 2 + u8::from(from_config);
+    (score, path.components().count())
+}
+
+fn normalize_existing_path(path: &Path) -> PathBuf {
+    fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn discover_codex_home_candidates(out: &mut Vec<PathBuf>) {
+    let Ok(home) = paths::codex_home_dir() else {
+        return;
+    };
+    if !home.is_dir() {
+        return;
+    }
+    collect_codex_cli_candidates(&home, out, 0);
+}
+
+fn discover_path_candidates(out: &mut Vec<PathBuf>) {
+    #[cfg(windows)]
+    {
+        append_cli_from_command(out, "where", &["codex.exe"]);
+    }
+    #[cfg(not(windows))]
+    {
+        append_cli_from_command(out, "which", &["codex"]);
+    }
+}
+
+fn append_cli_from_command(out: &mut Vec<PathBuf>, program: &str, args: &[&str]) {
+    let output = match Command::new(program).args(args).output() {
+        Ok(output) if output.status.success() => output,
+        _ => return,
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let path = PathBuf::from(line.trim());
+        if path.is_file() {
+            out.push(path);
+        }
+    }
+}
+
+#[cfg(windows)]
+fn discover_windows_store_candidates(out: &mut Vec<PathBuf>) {
+    let windows_apps = PathBuf::from(r"C:\Program Files\WindowsApps");
+    if !windows_apps.is_dir() {
+        return;
+    }
+    let entries = match fs::read_dir(&windows_apps) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !name.starts_with("OpenAI.Codex") {
+            continue;
+        }
+        let candidate = path.join("app").join("resources").join("codex.exe");
+        if candidate.is_file() {
+            out.push(candidate);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn discover_macos_app_candidates(out: &mut Vec<PathBuf>) {
+    let candidate =
+        PathBuf::from("/Applications/Codex.app/Contents/Resources/codex");
+    if candidate.is_file() {
+        out.push(candidate);
+    }
 }
 
 fn read_codex_cli_from_config() -> Option<PathBuf> {
@@ -191,19 +327,17 @@ fn read_codex_cli_from_config() -> Option<PathBuf> {
     candidate.is_file().then_some(candidate)
 }
 
-fn discover_codex_cli_from_patched_install() -> Option<PathBuf> {
-    let home = paths::codex_home_dir().ok()?;
-    let patched_root = home.join("zh-cn-patched");
-    if !patched_root.is_dir() {
-        return None;
-    }
-    let mut candidates = Vec::new();
-    collect_codex_cli_candidates(&patched_root, &mut candidates);
-    candidates.sort_by_key(|path| std::cmp::Reverse(path.components().count()));
-    candidates.into_iter().find(|path| path.is_file())
+fn should_skip_discovery_dir(name: &str) -> bool {
+    matches!(
+        name,
+        "plugins" | "log" | "sessions" | "archived_sessions" | "tmp" | ".sandbox" | "vendor_imports"
+    )
 }
 
-fn collect_codex_cli_candidates(dir: &Path, out: &mut Vec<PathBuf>) {
+fn collect_codex_cli_candidates(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
+    if depth > 10 {
+        return;
+    }
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(_) => return,
@@ -211,17 +345,29 @@ fn collect_codex_cli_candidates(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            collect_codex_cli_candidates(&path, out);
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if should_skip_discovery_dir(name) {
+                continue;
+            }
+            collect_codex_cli_candidates(&path, out, depth + 1);
             continue;
         }
-        #[cfg(windows)]
-        if path.file_name().and_then(|name| name.to_str()) == Some("codex.exe") {
+        if is_codex_cli_binary(&path) {
             out.push(path);
         }
-        #[cfg(not(windows))]
-        if path.file_name().and_then(|name| name.to_str()) == Some("codex") {
-            out.push(path);
-        }
+    }
+}
+
+fn is_codex_cli_binary(path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        path.file_name().and_then(|name| name.to_str()) == Some("codex.exe")
+    }
+    #[cfg(not(windows))]
+    {
+        path.file_name().and_then(|name| name.to_str()) == Some("codex")
     }
 }
 
@@ -308,5 +454,12 @@ mod tests {
     #[test]
     fn strip_quotes_trims_wrapping_quotes() {
         assert_eq!(strip_quotes("'C:\\codex.exe'"), r"C:\codex.exe");
+    }
+
+    #[test]
+    fn skip_heavy_discovery_dirs() {
+        assert!(should_skip_discovery_dir("plugins"));
+        assert!(should_skip_discovery_dir("log"));
+        assert!(!should_skip_discovery_dir("zh-cn-patched"));
     }
 }

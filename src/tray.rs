@@ -273,9 +273,7 @@ fn handle_menu_click(ctx: &Arc<TrayContext>, id: &str) {
                     tracing::error!("Computer Use 修复失败: {err:#}");
                     crate::macos_dialog::error(
                         "Computer Use 修复失败",
-                        &format!(
-                            "{err:#}\n\n请先打开过一次 Codex Desktop，再重试。\n若仍失败，请查看 README 常见问题。"
-                        ),
+                        &format!("{err:#}\n\n若仍失败，请运行 codex-helper doctor 或查看 README 常见问题。"),
                     );
                 }
             }

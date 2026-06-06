@@ -345,7 +345,17 @@ async fn cmd_doctor() -> anyhow::Result<()> {
         println!("✅ Codex 已配置 mcp_servers.node_repl");
     } else {
         println!("⚠️  Codex 未配置 mcp_servers.node_repl（Computer Use 依赖 node_repl MCP）");
-        println!("   请先打开一次 Codex Desktop，或运行 codex-helper repair-computer-use");
+        println!("   请先完整打开并退出一次 Codex Desktop，再运行 codex-helper repair-computer-use");
+        ok = false;
+    }
+
+    if codex::computer_use::codex_cli_available() {
+        if let Some(cli) = codex::computer_use::find_codex_cli() {
+            println!("✅ 已定位 Codex CLI: {}", cli.display());
+        }
+    } else {
+        println!("⚠️  找不到 Codex CLI（Computer Use 修复需要 Desktop 自带的 CLI）");
+        println!("   请先安装 Codex Desktop 并完整打开一次，再运行 repair-computer-use");
         ok = false;
     }
 
