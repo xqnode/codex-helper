@@ -102,8 +102,15 @@ $Gh = Find-GhCli
 Ensure-GhToken
 Write-Host "Using gh: $Gh"
 
-$releaseExists = & $Gh release view $Tag --repo xqnode/codex-helper 2>$null
-if ($LASTEXITCODE -ne 0) {
+$releaseExists = $false
+try {
+    & $Gh release view $Tag --repo xqnode/codex-helper 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { $releaseExists = $true }
+} catch {
+    $releaseExists = $false
+}
+
+if (-not $releaseExists) {
     if (-not (Test-Path $NotesPath)) {
         throw "Release notes not found: $NotesPath`nCreate it before first release for this version."
     }
