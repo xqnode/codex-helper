@@ -1,4 +1,5 @@
 mod catalog;
+pub mod computer_use;
 mod desktop_state;
 
 use toml::map::Map;

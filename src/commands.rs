@@ -18,6 +18,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         Commands::Use { provider } => cmd_use(&provider).await,
         Commands::Test => cmd_test().await,
         Commands::Doctor => cmd_doctor().await,
+        Commands::RepairComputerUse => cmd_repair_computer_use(),
         Commands::Settings => cmd_settings().await,
         Commands::Env { action } => cmd_env(action),
         Commands::RestoreOpenai => cmd_restore_openai(),
@@ -344,8 +345,16 @@ async fn cmd_doctor() -> anyhow::Result<()> {
         println!("✅ Codex 已配置 mcp_servers.node_repl");
     } else {
         println!("⚠️  Codex 未配置 mcp_servers.node_repl（Computer Use 依赖 node_repl MCP）");
-        println!("   在 Codex 设置里安装 Computer Use 插件后重启 Desktop，或重新同步配置");
+        println!("   请先打开一次 Codex Desktop，或运行 codex-helper repair-computer-use");
         ok = false;
+    }
+
+    if codex::computer_use::is_installed() {
+        println!("✅ Computer Use 插件已安装 (computer-use@computer-use-local)");
+    } else {
+        println!("⚠️  Computer Use 未安装或未完成修复");
+        println!("   托盘 → 修复 Computer Use（桌面控制），或运行 codex-helper repair-computer-use");
+        println!("   说明: Desktop 插件页的 openai-bundled 安装按钮已知会失败，请用上述命令修复");
     }
 
     let provider = app.active_provider()?;
@@ -396,6 +405,15 @@ fn cmd_env(action: EnvAction) -> anyhow::Result<()> {
             Ok(())
         }
     }
+}
+
+fn cmd_repair_computer_use() -> anyhow::Result<()> {
+    crate::actions::repair_computer_use_sync()?;
+    crate::macos_dialog::info(
+        "Computer Use 已修复",
+        "接下来请：\n\n1. 重新打开 Codex Desktop\n2. 新开一条对话\n3. 输入 $computer-use 试用\n\n插件页里的「安装」按钮可以忽略。",
+    );
+    Ok(())
 }
 
 fn cmd_restore_openai() -> anyhow::Result<()> {

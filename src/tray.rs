@@ -265,6 +265,23 @@ fn handle_menu_click(ctx: &Arc<TrayContext>, id: &str) {
         });
         return;
     }
+    if id == "repair_computer_use" {
+        spawn_tray_task(ctx, async move |_w| {
+            match actions::repair_computer_use().await {
+                Ok(()) => tracing::info!("Computer Use 修复完成"),
+                Err(err) => {
+                    tracing::error!("Computer Use 修复失败: {err:#}");
+                    crate::macos_dialog::error(
+                        "Computer Use 修复失败",
+                        &format!(
+                            "{err:#}\n\n请先打开过一次 Codex Desktop，再重试。\n若仍失败，请查看 README 常见问题。"
+                        ),
+                    );
+                }
+            }
+        });
+        return;
+    }
     if id == "check_health" {
         let _ = ctx.loop_proxy.send_event(TrayUserEvent::CheckHealth);
         return;
@@ -544,6 +561,12 @@ fn build_menu(app: &AppConfig, health: &ProviderHealth) -> anyhow::Result<Menu> 
     menu.append(&MenuItem::with_id(
         "resync",
         "重新同步配置",
+        true,
+        None,
+    ))?;
+    menu.append(&MenuItem::with_id(
+        "repair_computer_use",
+        "修复 Computer Use（桌面控制）",
         true,
         None,
     ))?;

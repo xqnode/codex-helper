@@ -33,6 +33,8 @@ pub enum Commands {
     Test,
     /// 一键诊断环境
     Doctor,
+    /// 修复 Codex Desktop Computer Use 插件安装失败
+    RepairComputerUse,
     /// 打开 API Key 设置窗口
     Settings,
     /// 设置 API Key（命令行，高级）

@@ -8,7 +8,6 @@ mod config;
 mod env_sync;
 mod icon;
 mod logs;
-#[cfg(target_os = "macos")]
 mod macos_dialog;
 mod paths;
 mod provider;

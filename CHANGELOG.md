@@ -11,6 +11,7 @@
 
 ### 新增
 
+- **Computer Use 一键修复**：托盘「修复 Computer Use（桌面控制）」与 `codex-helper repair-computer-use`，绕过 Codex Desktop 对 `openai-bundled` 的过滤
 - **厂商感知推理参数映射**（`codex_chat_reasoning` / `reasoning_options`）：DeepSeek、MiniMax、智谱、Kimi、千问、MiMo、OpenRouter 等按各自 API 形态注入 `thinking` / `reasoning_effort` / `enable_thinking`
 - **设置页推理档位**：可配置默认 `model_reasoning_effort`（默认 `medium`），写入 Codex `config.toml`
 - **内置工具历史合成**：`web_search` / `file_search` / `local_shell` 等 Responses 内置调用转为标准 assistant+tool 历史，避免上游格式拒绝
@@ -31,6 +32,7 @@
 
 ### 修复
 
+- Codex Desktop 插件页安装 Computer Use 失败（「插件安装失败」）；`doctor` 增加 Computer Use 安装状态检测
 - 多轮 tool 历史：`repair_messages_for_upstream` 合并连续 assistant tool_calls、补齐缺失 tool 回复、system 合并至首条
 - DeepSeek / Kimi 等 thinking 模型多轮 tool 时 `reasoning_content` 缺失导致 400
 - MiniMax / 各厂商 reasoning 参数形态审计与修正

@@ -91,6 +91,21 @@ pub async fn resync_codex(
     Ok(())
 }
 
+pub fn repair_computer_use_sync() -> anyhow::Result<()> {
+    kill_codex_desktop()?;
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    codex::computer_use::repair()
+}
+
+pub async fn repair_computer_use() -> anyhow::Result<()> {
+    repair_computer_use_sync()?;
+    crate::macos_dialog::info(
+        "Computer Use 已修复",
+        "接下来请：\n\n1. 重新打开 Codex Desktop\n2. 新开一条对话\n3. 输入 $computer-use 试用\n\n插件页里的「安装」按钮可以忽略。",
+    );
+    Ok(())
+}
+
 pub async fn restore_openai() -> anyhow::Result<()> {
     codex::restore_openai_official()?;
     tracing::info!("已恢复 OpenAI 官方配置");
