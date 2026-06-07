@@ -117,9 +117,10 @@ jobs:
           else
             VERSION="${GITHUB_REF_NAME#v}"
           fi
-          python3 <<'PY' "$VERSION"
-          import re, sys
-          version = sys.argv[1]
+          export RELEASE_VERSION="$VERSION"
+          python3 <<'PY'
+          import os, re
+          version = os.environ["RELEASE_VERSION"]
           text = open("CHANGELOG.md", encoding="utf-8").read()
           pattern = rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)"
           match = re.search(pattern, text, re.M | re.S)
