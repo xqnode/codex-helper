@@ -76,4 +76,4 @@ Codex Helper — 让 Codex 使用 DeepSeek / 千问 / 智谱 / Kimi / MiniMax
 【卸载绿色版】
   托盘 → 退出；删除解压目录即可。配置在 .codex-helper 里，需手动删。
 
-版本见压缩包文件名。MIT 协议，非 OpenAI / DeepSeek 官方产品。
+版本见压缩包文件名。非商业许可（禁止未经授权商用），非 OpenAI / DeepSeek 官方产品。详见 LICENSE。

@@ -1,21 +1,50 @@
-MIT License
+Codex Helper 非商业许可协议
+Non-Commercial License 1.0
 
 Copyright (c) 2026 xqnode
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+## 一、许可范围
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+在遵守本协议的前提下，您可**免费**对本软件（不含下文「第三方组件」中
+单独标注的部分）进行：
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+- 使用、复制、修改；
+- 以**非商业目的**向他人分发（须附带本协议全文及版权声明）。
+
+## 二、商业使用禁止
+
+未经著作权人**书面授权**，不得将本软件用于任何**商业目的**，包括但不限于：
+
+- 出售、出租、订阅收费、托管收费或提供付费下载/安装服务；
+- 将本软件（或其修改版）作为商业产品、SaaS、企业内部生产工具、
+  或对外收费服务的一部分；
+- 基于本软件向第三方提供有偿集成、定制、运维、技术支持或培训并据此营利；
+- 在应用商店、软件市场等渠道以付费形式分发本软件。
+
+个人学习、研究、开源非盈利项目、内部非生产环境测试，属于允许的非商业使用。
+
+## 三、第三方组件
+
+`src/proxy/codex_compat/` 中部分代码衍生自 cc-switch
+（https://github.com/farion1231/cc-switch），仍按原 **MIT License** 使用；
+详见仓库根目录 `NOTICE.md`。
+
+## 四、免责声明
+
+本软件按「原样」（AS IS）提供，不提供任何明示或暗示的担保，包括但不限于
+适销性、特定用途适用性、不侵权。作者不对因使用本软件产生的任何直接、
+间接、附带或后果性损害承担责任。
+
+## 五、商业授权
+
+如需商业使用，请联系仓库维护者另行取得书面授权。
+
+---
+
+## English Summary
+
+You may use, modify, and redistribute this software **free of charge for
+non-commercial purposes only**, provided this license and copyright notice
+are included. **Commercial use is prohibited** without prior written
+permission from the copyright holder. Portions of `src/proxy/codex_compat/`
+remain under the MIT License (see NOTICE.md). THE SOFTWARE IS PROVIDED "AS IS".

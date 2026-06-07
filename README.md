@@ -493,7 +493,7 @@ A：PowerShell 或 cmd 执行 `codex-helper doctor`，会检查配置目录、Co
 A：源代码开源，Key 存于本地 `%USERPROFILE%\.codex-helper\`，请求只发往你选的官方端点。
 
 **Q：付费吗？**
-A：完全免费，MIT 协议。模型 API 费用付给各模型厂商。
+A：软件本身免费，**仅限非商业使用**（见 [LICENSE](LICENSE)）；模型 API 费用付给各模型厂商。商业使用需另行授权。
 
 **Q：Codex Desktop 插件页安装 Computer Use 失败（「插件安装失败」）？**
 A：这是 Codex Desktop 已知问题，**不要在插件页反复点安装**。小白请按下面做：
@@ -529,7 +529,11 @@ A：Computer Use 依赖 Codex 本地的 `node_repl`（需 `[features] js_repl = 
 
 ## 许可证
 
-MIT © 2026
+本仓库采用 **[非商业许可](LICENSE)**（禁止未经授权的商业使用）。
+
+`src/proxy/codex_compat/` 中来自 cc-switch 的部分仍按 **MIT** 许可（见 [NOTICE.md](NOTICE.md)）。
+
+© 2026 xqnode
 
 ---
 
