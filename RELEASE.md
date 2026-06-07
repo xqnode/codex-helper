@@ -12,7 +12,7 @@
 
 | Runner | 产物 |
 |--------|------|
-| `windows-latest` | `CodexHelper-{version}-win64.exe`、`CodexHelper-{version}-win64.zip`、`CodexHelper-{version}-Setup.exe` |
+| `windows-latest` | `CodexHelper-{version}-win64.zip`、`CodexHelper-{version}-Setup.exe` |
 | `macos-latest` | `CodexHelper-{version}-macos.app.zip`、`CodexHelper-{version}-macos.dmg`（Universal arm64 + x86_64） |
 
 Release 说明从 `CHANGELOG.md` 对应版本段落自动提取。

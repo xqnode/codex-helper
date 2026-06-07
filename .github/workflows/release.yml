@@ -1,4 +1,4 @@
-# 推送 tag v* 时自动构建 Windows（exe + zip + Setup）与 macOS（.app.zip + DMG），并发布到 GitHub Releases。
+# 推送 tag v* 时自动构建 Windows（zip + Setup）与 macOS（.app.zip + DMG），并发布到 GitHub Releases。
 name: Release
 
 on:
@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   build-windows:
-    name: Windows (exe + zip + Setup)
+    name: Windows (zip + Setup)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,20 +43,11 @@ jobs:
         shell: pwsh
         run: ./scripts/build-release.ps1
 
-      - name: Package standalone exe
-        shell: pwsh
-        run: |
-          $cargo = Get-Content Cargo.toml -Raw
-          if ($cargo -match '(?m)^version\s*=\s*"([^"]+)"') { $ver = $Matches[1] } else { throw 'version' }
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item target/release/codex-helper.exe "dist/CodexHelper-$ver-win64.exe" -Force
-
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-release
           path: |
-            dist/CodexHelper-*-win64.exe
             dist/CodexHelper-*-win64.zip
             dist/CodexHelper-*-Setup.exe
           if-no-files-found: error
