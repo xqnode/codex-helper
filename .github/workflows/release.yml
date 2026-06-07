@@ -1,24 +1,32 @@
-# 推送 tag v* 时自动构建 Windows（zip + Setup.exe）与 macOS（DMG），并发布到 GitHub Releases。
+# 推送 tag v* 时自动构建 Windows（exe + zip + Setup）与 macOS（.app.zip + DMG），并发布到 GitHub Releases。
 name: Release
 
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to rebuild (e.g. v0.2.2)"
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
   cancel-in-progress: true
 
 jobs:
   build-windows:
-    name: Windows (zip + Setup.exe)
+    name: Windows (exe + zip + Setup)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -35,20 +43,31 @@ jobs:
         shell: pwsh
         run: ./scripts/build-release.ps1
 
+      - name: Package standalone exe
+        shell: pwsh
+        run: |
+          $cargo = Get-Content Cargo.toml -Raw
+          if ($cargo -match '(?m)^version\s*=\s*"([^"]+)"') { $ver = $Matches[1] } else { throw 'version' }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item target/release/codex-helper.exe "dist/CodexHelper-$ver-win64.exe" -Force
+
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-release
           path: |
+            dist/CodexHelper-*-win64.exe
             dist/CodexHelper-*-win64.zip
             dist/CodexHelper-*-Setup.exe
           if-no-files-found: error
 
   build-macos:
-    name: macOS (DMG)
+    name: macOS (.app.zip + DMG)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -59,11 +78,20 @@ jobs:
           chmod +x scripts/build-macos-release.sh
           ./scripts/build-macos-release.sh
 
+      - name: Package .app zip
+        run: |
+          VERSION="$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')"
+          ditto -c -k --sequesterResource --keepParent \
+            "dist/Codex Helper.app" \
+            "dist/CodexHelper-${VERSION}-macos.app.zip"
+
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos-release
-          path: dist/*.dmg
+          path: |
+            dist/*.dmg
+            dist/*.app.zip
           if-no-files-found: error
 
   publish:
@@ -72,6 +100,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Download build artifacts
         uses: actions/download-artifact@v4
@@ -82,7 +112,12 @@ jobs:
       - name: Prepare release notes from CHANGELOG
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.tag }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
           python3 <<'PY' "$VERSION"
           import re, sys
           version = sys.argv[1]
@@ -99,8 +134,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           body_path: release-body.md
           files: artifacts/**
           draft: false
