@@ -32,9 +32,13 @@ impl<S> LoggingByteStream<S> {
         self.finished = true;
         let entry = self.log.finalize(self.pending.clone(), self.usage.clone());
         let log = self.log.clone();
-        tokio::spawn(async move {
-            log.push(entry).await;
-        });
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                log.push(entry).await;
+            });
+        } else {
+            log.push_sync(entry);
+        }
     }
 }
 

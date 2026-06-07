@@ -9,7 +9,7 @@ use axum::{
     Json, Router,
 };
 use reqwest::Client;
-use tokio::sync::RwLock;
+use tokio::sync::{Notify, RwLock};
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
@@ -45,26 +45,40 @@ pub struct ProxyState {
     pub streaming_client: Client,
     pub request_log: RequestLogStore,
     tray_health_check: Arc<StdRwLock<Option<TrayHealthCheckHook>>>,
+    shutdown: Arc<Notify>,
 }
 
-pub fn spawn_server(config: AppConfig) -> anyhow::Result<Arc<ProxyState>> {
-    let (client, streaming_client) = config::build_proxy_upstream_clients()
-        .expect("failed to build upstream HTTP clients");
+pub async fn spawn_server(config: AppConfig) -> anyhow::Result<Arc<ProxyState>> {
+    config::validate_proxy_bind_host(&config.proxy.host)?;
+    let (client, streaming_client) = config::build_proxy_upstream_clients()?;
+    let shutdown = Arc::new(Notify::new());
     let state = Arc::new(ProxyState {
         config: Arc::new(RwLock::new(config.clone())),
         client,
         streaming_client,
         request_log: RequestLogStore::new(),
         tray_health_check: Arc::new(StdRwLock::new(None)),
+        shutdown: shutdown.clone(),
     });
     let addr = format!("{}:{}", config.proxy.host, config.proxy.port);
     let serve_state = state.clone();
+    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
-        if let Err(err) = run_listener(serve_state, &addr).await {
+        if let Err(err) = run_listener(serve_state, &addr, Some(ready_tx)).await {
             tracing::error!("代理异常退出: {err:#}");
         }
     });
-    Ok(state)
+    match ready_rx.await {
+        Ok(Ok(())) => Ok(state),
+        Ok(Err(err)) => Err(err),
+        Err(_) => anyhow::bail!("代理启动失败：监听任务在绑定端口前退出"),
+    }
+}
+
+/// 托盘退出时优雅关闭 axum，让流式日志有机会落盘。
+pub async fn shutdown(state: &ProxyState) {
+    state.shutdown.notify_one();
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 }
 
 /// 通知正在运行的代理从磁盘重新加载 config.json（CLI 切换模型后调用）。
@@ -112,6 +126,7 @@ pub fn request_tray_health_check(state: &ProxyState) {
 }
 
 pub async fn start_server(config: AppConfig) -> anyhow::Result<()> {
+    config::validate_proxy_bind_host(&config.proxy.host)?;
     let addr = format!("{}:{}", config.proxy.host, config.proxy.port);
     let (client, streaming_client) = config::build_proxy_upstream_clients()?;
     let state = ProxyState {
@@ -120,11 +135,16 @@ pub async fn start_server(config: AppConfig) -> anyhow::Result<()> {
         streaming_client,
         request_log: RequestLogStore::new(),
         tray_health_check: Arc::new(StdRwLock::new(None)),
+        shutdown: Arc::new(Notify::new()),
     };
-    run_listener(Arc::new(state), &addr).await
+    run_listener(Arc::new(state), &addr, None).await
 }
 
-async fn run_listener(state: Arc<ProxyState>, addr: &str) -> anyhow::Result<()> {
+async fn run_listener(
+    state: Arc<ProxyState>,
+    addr: &str,
+    ready: Option<tokio::sync::oneshot::Sender<anyhow::Result<()>>>,
+) -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/admin/reload", post(admin_reload))
@@ -146,11 +166,30 @@ async fn run_listener(state: Arc<ProxyState>, addr: &str) -> anyhow::Result<()> 
 
     info!("Codex Helper 代理已启动: http://{addr}/v1");
 
-    let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
-        anyhow::anyhow!("无法绑定端口 {addr}: {e}。请检查端口是否被占用。")
-    })?;
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(listener) => listener,
+        Err(e) => {
+            let err = anyhow::anyhow!(
+                "无法绑定 {addr}: {e}。端口 {} 可能被其他 codex-helper 实例占用。",
+                config::DEFAULT_PORT
+            );
+            if let Some(tx) = ready {
+                let _ = tx.send(Err(anyhow::anyhow!("{err:#}")));
+            }
+            return Err(err);
+        }
+    };
 
-    axum::serve(listener, app).await?;
+    if let Some(tx) = ready {
+        let _ = tx.send(Ok(()));
+    }
+
+    let shutdown = state.shutdown.clone();
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            shutdown.notified().await;
+        })
+        .await?;
     Ok(())
 }
 
@@ -283,7 +322,7 @@ async fn forward_responses_request(
                 .into_response();
         }
     };
-    let body = patch_upstream_model(&converted.body, &provider);
+    let body = patch_upstream_model(&converted.body, provider);
     let response = forward_request(
         state,
         "/chat/completions",
@@ -317,11 +356,25 @@ async fn catch_all(
     forward_request(&state, upstream_path, method, headers, body, false).await
 }
 
+fn extract_client_request_id(headers: &HeaderMap) -> String {
+    for key in ["x-request-id", "x-correlation-id", "traceparent"] {
+        if let Some(value) = headers.get(key) {
+            if let Ok(text) = value.to_str() {
+                let text = text.trim();
+                if !text.is_empty() {
+                    return text.to_string();
+                }
+            }
+        }
+    }
+    String::new()
+}
+
 async fn forward_request(
     state: &ProxyState,
     upstream_path: &str,
     method: Method,
-    _headers: HeaderMap,
+    headers: HeaderMap,
     body: axum::body::Bytes,
     already_normalized: bool,
 ) -> Response {
@@ -359,6 +412,7 @@ async fn forward_request(
         provider_name: provider.name.clone(),
         model,
         path: upstream_path.to_string(),
+        client_request_id: extract_client_request_id(&headers),
         stream: stream_request,
         started,
         status: 0,
@@ -473,7 +527,7 @@ async fn finish_upstream_response(
     let mut response_headers = HeaderMap::new();
     let mut is_sse = false;
     for (name, value) in resp.headers() {
-        if name == reqwest::header::TRANSFER_ENCODING {
+        if name == reqwest::header::TRANSFER_ENCODING || name == reqwest::header::CONNECTION {
             continue;
         }
         if name == reqwest::header::CONTENT_TYPE {
@@ -652,6 +706,55 @@ fn chat_json_to_responses_json(
     Ok(serde_json::to_string(&response)?)
 }
 
+/// Responses→Chat 转换后的请求体只需替换上游 model，避免重复 normalize/repair。
+fn patch_upstream_model(body: &[u8], provider: &config::ProviderConfig) -> Vec<u8> {
+    let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return body.to_vec();
+    };
+
+    let upstream = provider.upstream_model();
+    if !upstream.trim().is_empty() {
+        value["model"] = serde_json::Value::String(upstream.to_string());
+    }
+
+    serde_json::to_vec(&value).unwrap_or_else(|_| body.to_vec())
+}
+
+fn normalize_upstream_body(
+    body: &axum::body::Bytes,
+    provider: &config::ProviderConfig,
+    tool_output_max_chars: usize,
+) -> Vec<u8> {
+    let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return body.to_vec();
+    };
+
+    if let Some(messages) = value.get_mut("messages").and_then(|m| m.as_array_mut()) {
+        normalize_messages_for_upstream(messages);
+        repair_messages_for_upstream_with_options(
+            messages,
+            responses_to_chat::repair_options_for_provider(
+                Some(provider),
+                tool_output_max_chars,
+            ),
+        );
+    }
+
+    let stream = value
+        .get("stream")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    finalize_chat_request(&mut value, stream);
+    reasoning_options::apply_reasoning_options(&mut value, provider);
+
+    let upstream = provider.upstream_model();
+    if !upstream.trim().is_empty() {
+        value["model"] = serde_json::Value::String(upstream.to_string());
+    }
+
+    serde_json::to_vec(&value).unwrap_or_else(|_| body.to_vec())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -768,53 +871,11 @@ mod tests {
         assert_eq!(v["output_text"], "pong");
         assert_eq!(v["output"][0]["content"][0]["type"], "output_text");
     }
-}
 
-/// Responses→Chat 转换后的请求体只需替换上游 model，避免重复 normalize/repair。
-fn patch_upstream_model(body: &[u8], provider: &config::ProviderConfig) -> Vec<u8> {
-    let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(body) else {
-        return body.to_vec();
-    };
-
-    let upstream = provider.upstream_model();
-    if !upstream.trim().is_empty() {
-        value["model"] = serde_json::Value::String(upstream.to_string());
+    #[test]
+    fn extract_client_request_id_reads_common_headers() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-request-id", HeaderValue::from_static("req-abc"));
+        assert_eq!(super::extract_client_request_id(&headers), "req-abc");
     }
-
-    serde_json::to_vec(&value).unwrap_or_else(|_| body.to_vec())
-}
-
-fn normalize_upstream_body(
-    body: &axum::body::Bytes,
-    provider: &config::ProviderConfig,
-    tool_output_max_chars: usize,
-) -> Vec<u8> {
-    let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(body) else {
-        return body.to_vec();
-    };
-
-    if let Some(messages) = value.get_mut("messages").and_then(|m| m.as_array_mut()) {
-        normalize_messages_for_upstream(messages);
-        repair_messages_for_upstream_with_options(
-            messages,
-            responses_to_chat::repair_options_for_provider(
-                Some(provider),
-                tool_output_max_chars,
-            ),
-        );
-    }
-
-    let stream = value
-        .get("stream")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    finalize_chat_request(&mut value, stream);
-    reasoning_options::apply_reasoning_options(&mut value, provider);
-
-    let upstream = provider.upstream_model();
-    if !upstream.trim().is_empty() {
-        value["model"] = serde_json::Value::String(upstream.to_string());
-    }
-
-    serde_json::to_vec(&value).unwrap_or_else(|_| body.to_vec())
 }

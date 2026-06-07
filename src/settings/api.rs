@@ -247,12 +247,11 @@ async fn save_api_key(
     apply_custom_models_from_text(provider_cfg, custom_models_text)?;
 
     let provider = provider_cfg.clone();
-    if provider_supports_reasoning_effort_levels(&provider) {
-        if !model_reasoning_effort.is_empty() {
+    if provider_supports_reasoning_effort_levels(&provider)
+        && !model_reasoning_effort.is_empty() {
             app.model_reasoning_effort =
                 config::normalize_model_reasoning_effort(model_reasoning_effort);
         }
-    }
     if !api_key.is_empty() {
         config::save_env_value(&provider.api_key_env, api_key)?;
     } else if config::resolve_api_key(&provider.api_key_env).is_err() {

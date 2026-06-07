@@ -19,13 +19,13 @@ pub struct ModelVariant {
 
 pub fn popular_models(provider_id: &str) -> &'static [ModelVariant] {
     match provider_id {
-        "deepseek" => &DEEPSEEK_MODELS,
-        "qwen" => &QWEN_MODELS,
-        "zhipu" => &ZHIPU_MODELS,
-        "kimi" => &KIMI_MODELS,
-        "minimax" => &MINIMAX_MODELS,
-        "mimo" => &MIMO_MODELS,
-        "custom" => &OPENAI_MODELS,
+        "deepseek" => DEEPSEEK_MODELS,
+        "qwen" => QWEN_MODELS,
+        "zhipu" => ZHIPU_MODELS,
+        "kimi" => KIMI_MODELS,
+        "minimax" => MINIMAX_MODELS,
+        "mimo" => MIMO_MODELS,
+        "custom" => OPENAI_MODELS,
         _ => &[],
     }
 }
@@ -66,9 +66,9 @@ pub fn menu_tag(provider: &crate::config::ProviderConfig) -> Option<String> {
 
 /// 托盘菜单用，如 1M、256K。
 pub fn format_context_window(tokens: u32) -> String {
-    if tokens >= 1_000_000 && tokens % 1_000_000 == 0 {
+    if tokens >= 1_000_000 && tokens.is_multiple_of(1_000_000) {
         format!("{}M", tokens / 1_000_000)
-    } else if tokens >= 1_000 && tokens % 1_000 == 0 {
+    } else if tokens >= 1_000 && tokens.is_multiple_of(1_000) {
         format!("{}K", tokens / 1_000)
     } else {
         tokens.to_string()

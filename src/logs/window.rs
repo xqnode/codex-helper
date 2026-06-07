@@ -42,7 +42,7 @@ pub fn close_logs_window(slot: &mut Option<LogsWindow>, window_id: WindowId) -> 
 
 pub fn focus_logs_window(slot: &Option<LogsWindow>) {
     if let Some(logs) = slot {
-        let _ = logs.window.set_focus();
+        logs.window.set_focus();
     }
 }
 

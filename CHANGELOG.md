@@ -7,6 +7,24 @@
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-06-06
+
+### 修复
+
+- **千问 / 非 effort 厂商 catalog**：始终写入 `supported_reasoning_levels`（含空数组），修复 Codex v26+ 切换千问后报 `missing field supported_reasoning_levels`
+- **Windows API Key 同步**：`setx` 改为 `reg add` 写用户环境变量，避免 1024 字符截断与 `%VAR%` 展开；读取同样走 `reg query`
+- **代理安全**：仅允许绑定 `127.0.0.1` / `localhost` / `::1`，防止手改 `config.json` 暴露 `/admin` 与 API
+- **固定端口策略**：`inject_proxy_config` 与 `clear_all_settings` 对齐，代理固定 `127.0.0.1:25543`
+- **托盘退出**：优雅关闭 axum 后再退出进程，流式请求日志不再因 `exit(0)` 丢失
+- **`spawn_server` 绑定确认**：端口绑定成功后才返回，失败立即报错
+- **Computer Use 修复竞态**：结束 Codex 后轮询进程退出（10s 超时），替代固定 sleep 500ms
+- **请求日志**：DB 先写后缓存、`load_recent` 改用 DESC；记录 `x-request-id` 等客户端 trace；退出时 sync 直写 SQLite
+
+### 变更
+
+- 上游响应透传时剥除 `Connection` 头；端口占用提示改为「结束多余 codex-helper 实例」
+- 单元测试增至 **121** 项；Clippy 警告清理
+
 ## [0.2.2] - 2026-06-06
 
 ### 新增

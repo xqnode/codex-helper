@@ -24,23 +24,56 @@ fn write_codex_dotenv(openai_api_key: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Windows 用户环境变量 REG_SZ 实际上限（UTF-16 代码单元）。
+const WINDOWS_USER_ENV_MAX_LEN: usize = 32_767;
+
+#[cfg(windows)]
+fn validate_windows_env_entry(key: &str, value: &str) -> anyhow::Result<()> {
+    if key.trim().is_empty() {
+        anyhow::bail!("环境变量名不能为空");
+    }
+    if key.contains('=') {
+        anyhow::bail!("环境变量名不能包含 '='");
+    }
+    if value.len() > WINDOWS_USER_ENV_MAX_LEN {
+        anyhow::bail!(
+            "环境变量 {key} 值过长（{} 字符），Windows 上限为 {WINDOWS_USER_ENV_MAX_LEN}",
+            value.len()
+        );
+    }
+    Ok(())
+}
+
 #[cfg(windows)]
 fn sync_windows_user_env(key: &str, value: &str) -> anyhow::Result<()> {
     use std::os::windows::process::CommandExt;
     use std::process::Command;
 
+    validate_windows_env_entry(key, value)?;
+
     // CREATE_NO_WINDOW = 0x08000000
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    let output = Command::new("setx")
-        .args([key, value])
+    // 直接调用 reg.exe（不经 cmd），避免 setx 的 1024 字符上限与特殊字符问题。
+    let output = Command::new("reg")
+        .args([
+            "add",
+            r"HKCU\Environment",
+            "/v",
+            key,
+            "/t",
+            "REG_SZ",
+            "/d",
+            value,
+            "/f",
+        ])
         .creation_flags(CREATE_NO_WINDOW)
         .output()
-        .map_err(|e| anyhow::anyhow!("无法执行 setx: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("无法写入 Windows 用户环境变量: {e}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("setx {key} 失败: {stderr}");
+        anyhow::bail!("写入环境变量 {key} 失败: {stderr}");
     }
     Ok(())
 }
@@ -48,6 +81,35 @@ fn sync_windows_user_env(key: &str, value: &str) -> anyhow::Result<()> {
 #[cfg(not(windows))]
 fn sync_windows_user_env(_key: &str, _value: &str) -> anyhow::Result<()> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(windows)]
+    use super::validate_windows_env_entry;
+
+    #[cfg(windows)]
+    #[test]
+    fn validate_windows_env_entry_rejects_oversized_values() {
+        let huge = "x".repeat(32_768);
+        assert!(validate_windows_env_entry("OPENAI_API_KEY", &huge).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn validate_windows_env_entry_accepts_percent_in_value() {
+        assert!(validate_windows_env_entry("OPENAI_API_KEY", "sk-%FOO%-bar").is_ok());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn parse_reg_query_value_reads_reg_sz_payload() {
+        let text = "HKEY_CURRENT_USER\\Environment\r\n    OPENAI_API_KEY    REG_SZ    sk-%FOO% token\r\n";
+        assert_eq!(
+            super::parse_reg_query_value(text, "OPENAI_API_KEY").as_deref(),
+            Some("sk-%FOO% token")
+        );
+    }
 }
 
 #[cfg(windows)]
@@ -61,27 +123,33 @@ pub fn windows_user_env_is_set(key: &str) -> bool {
 
 #[cfg(windows)]
 fn read_windows_user_env(key: &str) -> Option<String> {
-    use std::process::Command;
     use std::os::windows::process::CommandExt;
+    use std::process::Command;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    let output = Command::new("cmd")
-        .args(["/C", &format!("reg query HKCU\\Environment /v {key}")])
+    let output = Command::new("reg")
+        .args(["query", r"HKCU\Environment", "/v", key])
         .creation_flags(CREATE_NO_WINDOW)
         .output()
         .ok()?;
     if !output.status.success() {
         return None;
     }
-    let text = String::from_utf8_lossy(&output.stdout);
-    text.lines()
-        .find_map(|line| {
-            let line = line.trim();
-            if line.starts_with(key) {
-                line.split_whitespace().last().map(str::to_string)
-            } else {
-                None
-            }
-        })
-        .filter(|v| !v.trim().is_empty())
+    parse_reg_query_value(&String::from_utf8_lossy(&output.stdout), key)
+}
+
+#[cfg(windows)]
+fn parse_reg_query_value(text: &str, key: &str) -> Option<String> {
+    for line in text.lines() {
+        let line = line.trim();
+        if !line.starts_with(key) {
+            continue;
+        }
+        let rest = line.strip_prefix(key)?.trim();
+        let rest = rest.strip_prefix("REG_SZ")?.trim();
+        if !rest.is_empty() {
+            return Some(rest.to_string());
+        }
+    }
+    None
 }

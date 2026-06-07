@@ -22,6 +22,8 @@ pub struct RequestLogEntry {
     pub provider_name: String,
     pub model: String,
     pub path: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub client_request_id: String,
     pub stream: bool,
     pub status: u16,
     pub duration_ms: u64,
@@ -39,6 +41,7 @@ pub struct PendingRequest {
     pub provider_name: String,
     pub model: String,
     pub path: String,
+    pub client_request_id: String,
     pub stream: bool,
     pub started: Instant,
     pub status: u16,
@@ -77,13 +80,22 @@ impl RequestLogStore {
     }
 
     pub async fn push(&self, entry: RequestLogEntry) {
-        {
-            let mut entries = self.inner.write().await;
-            entries.push_back(entry.clone());
-            while entries.len() > MAX_ENTRIES {
-                entries.pop_front();
+        if let Some(db) = &self.db {
+            if let Err(err) = db.insert(&entry) {
+                tracing::warn!("写入请求日志失败: {err:#}");
+            } else if let Err(err) = db.trim(MAX_ENTRIES) {
+                tracing::warn!("裁剪请求日志失败: {err:#}");
             }
         }
+        let mut entries = self.inner.write().await;
+        entries.push_back(entry);
+        while entries.len() > MAX_ENTRIES {
+            entries.pop_front();
+        }
+    }
+
+    /// 进程退出等无 Tokio runtime 时直写 SQLite，避免 Drop 路径丢日志。
+    pub fn push_sync(&self, entry: RequestLogEntry) {
         if let Some(db) = &self.db {
             if let Err(err) = db.insert(&entry) {
                 tracing::warn!("写入请求日志失败: {err:#}");
@@ -158,6 +170,7 @@ impl RequestLogStore {
             provider_name: pending.provider_name,
             model: pending.model,
             path: pending.path,
+            client_request_id: pending.client_request_id,
             stream: pending.stream,
             status: pending.status,
             duration_ms,

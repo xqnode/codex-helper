@@ -25,6 +25,9 @@ pub fn backup_codex_config() -> anyhow::Result<Option<std::path::PathBuf>> {
 pub fn inject_proxy_config(app: &AppConfig) -> anyhow::Result<()> {
     backup_codex_config()?;
     let mut app = app.clone();
+    if app.proxy.host != config::DEFAULT_HOST {
+        app.proxy.host = config::DEFAULT_HOST.to_string();
+    }
     if app.proxy.port != config::DEFAULT_PORT {
         app.proxy.port = config::DEFAULT_PORT;
     }
@@ -371,6 +374,10 @@ fn scrub_stale_helper_provider_keys(providers: &mut Map<String, toml::Value>) {
     }
 }
 
+fn sync_provider_presets(app: &mut AppConfig) {
+    crate::provider::sync_builtin_presets(app);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -422,8 +429,4 @@ mod tests {
         assert!(!providers.contains_key("deepseek"));
         assert!(!providers.contains_key(PROVIDER_ID));
     }
-}
-
-fn sync_provider_presets(app: &mut AppConfig) {
-    crate::provider::sync_builtin_presets(app);
 }

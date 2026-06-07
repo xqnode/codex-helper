@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS request_logs (
     provider_name TEXT NOT NULL,
     model TEXT NOT NULL,
     path TEXT NOT NULL,
+    client_request_id TEXT NOT NULL DEFAULT '',
     stream INTEGER NOT NULL,
     status INTEGER NOT NULL,
     duration_ms INTEGER NOT NULL,
@@ -38,6 +39,10 @@ impl RequestLogDb {
         }
         let conn = Connection::open(path)?;
         conn.execute_batch(SCHEMA)?;
+        let _ = conn.execute(
+            "ALTER TABLE request_logs ADD COLUMN client_request_id TEXT NOT NULL DEFAULT ''",
+            [],
+        );
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -45,22 +50,20 @@ impl RequestLogDb {
 
     pub fn load_recent(&self, limit: usize) -> anyhow::Result<Vec<RequestLogEntry>> {
         let conn = self.conn.lock().map_err(|e| anyhow::anyhow!("{e}"))?;
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM request_logs", [], |row| row.get(0))?;
-        let offset = (count - limit as i64).max(0);
-
         let mut stmt = conn.prepare(
             "SELECT id, time_ms, time_label, provider_id, provider_name, model, path,
-                    stream, status, duration_ms, input_tokens, output_tokens, total_tokens,
-                    cost_yuan, cost_label, ok
+                    client_request_id, stream, status, duration_ms, input_tokens, output_tokens,
+                    total_tokens, cost_yuan, cost_label, ok
              FROM request_logs
-             ORDER BY time_ms ASC
-             LIMIT ?1 OFFSET ?2",
+             ORDER BY time_ms DESC
+             LIMIT ?1",
         )?;
-        let rows = stmt.query_map(params![limit as i64, offset], row_to_entry)?;
+        let rows = stmt.query_map(params![limit as i64], row_to_entry)?;
         let mut out = Vec::new();
         for row in rows {
             out.push(row?);
         }
+        out.reverse();
         Ok(out)
     }
 
@@ -69,9 +72,9 @@ impl RequestLogDb {
         conn.execute(
             "INSERT OR REPLACE INTO request_logs (
                 id, time_ms, time_label, provider_id, provider_name, model, path,
-                stream, status, duration_ms, input_tokens, output_tokens, total_tokens,
-                cost_yuan, cost_label, ok
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                client_request_id, stream, status, duration_ms, input_tokens, output_tokens,
+                total_tokens, cost_yuan, cost_label, ok
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
             params![
                 entry.id,
                 entry.time_ms,
@@ -80,6 +83,7 @@ impl RequestLogDb {
                 entry.provider_name,
                 entry.model,
                 entry.path,
+                entry.client_request_id,
                 entry.stream as i64,
                 entry.status,
                 entry.duration_ms,
@@ -124,15 +128,16 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<RequestLogEntry> {
         provider_name: row.get(4)?,
         model: row.get(5)?,
         path: row.get(6)?,
-        stream: row.get::<_, i64>(7)? != 0,
-        status: row.get(8)?,
-        duration_ms: row.get(9)?,
-        input_tokens: row.get(10)?,
-        output_tokens: row.get(11)?,
-        total_tokens: row.get(12)?,
-        cost_yuan: row.get(13)?,
-        cost_label: row.get(14)?,
-        ok: row.get::<_, i64>(15)? != 0,
+        client_request_id: row.get(7)?,
+        stream: row.get::<_, i64>(8)? != 0,
+        status: row.get(9)?,
+        duration_ms: row.get(10)?,
+        input_tokens: row.get(11)?,
+        output_tokens: row.get(12)?,
+        total_tokens: row.get(13)?,
+        cost_yuan: row.get(14)?,
+        cost_label: row.get(15)?,
+        ok: row.get::<_, i64>(16)? != 0,
     })
 }
 
@@ -150,6 +155,7 @@ mod tests {
             provider_name: "DeepSeek".into(),
             model: "deepseek-v4-flash".into(),
             path: "/chat/completions".into(),
+            client_request_id: String::new(),
             stream: true,
             status: 200,
             duration_ms: 100,

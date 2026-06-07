@@ -211,12 +211,9 @@ impl AppConfig {
         write_atomic(&path, &raw)
     }
 
-    /// 清除 Helper 本地配置：重置厂商/模型/中转站，删除所有 API Key；保留当前代理端口以免运行中实例失效。
+    /// 清除 Helper 本地配置：重置厂商/模型/中转站，删除所有 API Key；代理固定为 127.0.0.1:25543。
     pub fn clear_all_settings() -> anyhow::Result<Self> {
-        let current = Self::load().unwrap_or_default();
-        let mut app = Self::default();
-        app.proxy.host = current.proxy.host.clone();
-        app.proxy.port = current.proxy.port;
+        let app = Self::default();
         app.save()?;
 
         let env_path = paths::helper_env_path()?;
@@ -239,6 +236,24 @@ impl AppConfig {
     pub fn proxy_base_url(&self) -> String {
         format!("http://{}:{}/v1", self.proxy.host, self.proxy.port)
     }
+}
+
+/// 代理仅允许绑定本机回环，防止 /admin 与 API 暴露到局域网。
+pub fn validate_proxy_bind_host(host: &str) -> anyhow::Result<()> {
+    let host = host.trim();
+    if host.is_empty() {
+        anyhow::bail!("代理 host 不能为空");
+    }
+    if host == DEFAULT_HOST || host.eq_ignore_ascii_case("localhost") {
+        return Ok(());
+    }
+    if host == "::1" || host == "[::1]" {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "代理仅允许绑定到本机回环地址（127.0.0.1 或 localhost），当前为 {host:?}。\
+         绑定到 0.0.0.0 会暴露 /admin 设置页与 API Key，存在安全风险。"
+    );
 }
 
 pub fn normalize_base_url(url: &str) -> String {
@@ -358,7 +373,6 @@ mod tests {
             AppConfig::default().tool_output_max_chars,
             DEFAULT_TOOL_OUTPUT_MAX_CHARS
         );
-        assert_eq!(DEFAULT_TOOL_OUTPUT_MAX_CHARS, 0);
     }
 
     #[test]
@@ -398,5 +412,14 @@ mod tests {
             AppConfig::default().proxy_base_url(),
             format!("http://{DEFAULT_HOST}:{DEFAULT_PORT}/v1")
         );
+    }
+
+    #[test]
+    fn validate_proxy_bind_host_accepts_loopback_only() {
+        assert!(validate_proxy_bind_host("127.0.0.1").is_ok());
+        assert!(validate_proxy_bind_host("localhost").is_ok());
+        assert!(validate_proxy_bind_host("::1").is_ok());
+        assert!(validate_proxy_bind_host("0.0.0.0").is_err());
+        assert!(validate_proxy_bind_host("192.168.1.1").is_err());
     }
 }

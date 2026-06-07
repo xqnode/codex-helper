@@ -85,7 +85,8 @@ async fn ensure_proxy_port_available(app: &AppConfig) -> anyhow::Result<()> {
             Ok(())
         }
         Err(_) => anyhow::bail!(
-            "端口 {addr} 已被其他程序占用。请在设置中更换端口，或关闭占用该端口的程序。"
+            "端口 {addr} 已被占用。请结束任务管理器里多余的 codex-helper 进程后重试（固定端口 {}）。",
+            config::DEFAULT_PORT
         ),
     }
 }

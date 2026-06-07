@@ -312,8 +312,11 @@
       entries.forEach(entry => {
         const tr = document.createElement('tr');
         tr.className = entry.ok ? 'ok' : 'err';
+        const reqHint = entry.client_request_id
+          ? ' title="request-id: ' + entry.client_request_id + '"'
+          : '';
         tr.innerHTML =
-          '<td class="mono">' + entry.time_label + '</td>' +
+          '<td class="mono"' + reqHint + '>' + entry.time_label + '</td>' +
           '<td>' + entry.provider_name + '</td>' +
           '<td class="mono" title="' + entry.model + '">' + entry.model + '</td>' +
           '<td class="mono">' + fmtNum(entry.input_tokens) + '</td>' +

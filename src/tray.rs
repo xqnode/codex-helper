@@ -53,7 +53,7 @@ impl Default for ProviderHealth {
 pub async fn run_with_proxy(app: AppConfig) -> anyhow::Result<()> {
     let rt_handle = tokio::runtime::Handle::current();
     let config = Arc::new(RwLock::new(app.clone()));
-    let proxy = proxy::spawn_server(app.clone())?;
+    let proxy = proxy::spawn_server(app.clone()).await?;
 
     let mut builder = EventLoopBuilder::<TrayUserEvent>::with_user_event();
     #[cfg(windows)]
@@ -122,7 +122,7 @@ pub async fn run_with_proxy(app: AppConfig) -> anyhow::Result<()> {
                     match TrayIconBuilder::new()
                         .with_icon(crate::icon::tray_icon())
                         .with_menu(Box::new(menu))
-                        .with_tooltip(&tooltip_text(&app_for_init, &ProviderHealth::default()))
+                        .with_tooltip(tooltip_text(&app_for_init, &ProviderHealth::default()))
                         .build()
                     {
                         Ok(tray) => {
@@ -181,7 +181,7 @@ pub async fn run_with_proxy(app: AppConfig) -> anyhow::Result<()> {
                     }
                 }
                 Event::UserEvent(TrayUserEvent::MenuClick(id)) => {
-                    handle_menu_click(&ctx_for_loop, &id);
+                    handle_menu_click(&ctx_for_loop, &id, control_flow);
                 }
                 Event::WindowEvent {
                     window_id,
@@ -237,9 +237,18 @@ struct TrayWorker {
     proxy: Arc<ProxyState>,
 }
 
-fn handle_menu_click(ctx: &Arc<TrayContext>, id: &str) {
+fn handle_menu_click(
+    ctx: &Arc<TrayContext>,
+    id: &str,
+    control_flow: &mut ControlFlow,
+) {
     if id == "quit" {
-        std::process::exit(0);
+        ctx.rt.block_on(async {
+            proxy::shutdown(&ctx.proxy).await;
+        });
+        *ctx.tray.borrow_mut() = None;
+        *control_flow = ControlFlow::Exit;
+        return;
     }
     if id == "settings" {
         let _ = ctx.loop_proxy.send_event(TrayUserEvent::OpenSettings);
@@ -430,7 +439,7 @@ fn refresh_tray_ui(ctx: &Arc<TrayContext>) {
         return;
     };
     if let Ok(menu) = build_menu(&app, &health) {
-        let _ = tray.set_menu(Some(Box::new(menu)));
+        tray.set_menu(Some(Box::new(menu)));
         let tip = tooltip_text(&app, &health);
         let _ = tray.set_tooltip(Some(tip.as_str()));
     }

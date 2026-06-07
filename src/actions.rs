@@ -93,7 +93,9 @@ pub async fn resync_codex(
 
 pub fn repair_computer_use_sync() -> anyhow::Result<()> {
     kill_codex_desktop()?;
-    std::thread::sleep(std::time::Duration::from_millis(500));
+    if !wait_for_codex_desktop_exit(std::time::Duration::from_secs(10)) {
+        tracing::warn!("Codex 进程未在 10 秒内完全退出，继续修复");
+    }
     codex::computer_use::repair()
 }
 
@@ -139,10 +141,73 @@ pub fn kill_codex_desktop() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn wait_for_codex_desktop_exit(timeout: std::time::Duration) -> bool {
+    let deadline = std::time::Instant::now() + timeout;
+    while std::time::Instant::now() < deadline {
+        if !codex_desktop_running() {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    !codex_desktop_running()
+}
+
+fn codex_desktop_running() -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        use std::process::{Command, Stdio};
+
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        for exe in ["Codex.exe", "codex.exe"] {
+            let filter = format!("IMAGENAME eq {exe}");
+            let output = Command::new("tasklist")
+                .args(["/FI", &filter, "/NH"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .output();
+            let Ok(output) = output else {
+                continue;
+            };
+            if !output.status.success() {
+                continue;
+            }
+            let text = String::from_utf8_lossy(&output.stdout);
+            if text.contains(exe) {
+                return true;
+            }
+        }
+        false
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        for name in ["Codex", "codex"] {
+            let output = Command::new("pgrep")
+                .arg("-x")
+                .arg(name)
+                .output();
+            if let Ok(output) = output {
+                if output.status.success() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        false
+    }
+}
+
 /// 结束所有 Codex 进程，并将 ~/.codex 恢复为官方默认（移除 helper 注入项）。
 pub async fn kill_codex_and_reset_defaults() -> anyhow::Result<()> {
     kill_codex_desktop()?;
-    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    if !wait_for_codex_desktop_exit(std::time::Duration::from_secs(10)) {
+        tracing::warn!("Codex 进程未在 10 秒内完全退出，继续恢复默认配置");
+    }
     codex::reset_desktop_defaults()?;
     tracing::info!("已彻底退出 Codex 并恢复默认配置");
     Ok(())

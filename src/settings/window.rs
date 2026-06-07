@@ -60,7 +60,7 @@ pub fn close_settings_window(slot: &mut Option<SettingsWindow>, window_id: Windo
 
 pub fn focus_settings_window(slot: &Option<SettingsWindow>) {
     if let Some(settings) = slot {
-        let _ = settings.window.set_focus();
+        settings.window.set_focus();
     }
 }
 

@@ -45,10 +45,6 @@ pub struct ConvertedChatRequest {
     pub tool_context: CodexToolContext,
 }
 
-pub fn convert_responses_to_chat(body: &axum::body::Bytes) -> anyhow::Result<ConvertedChatRequest> {
-    convert_responses_to_chat_with_provider(body, None, 0)
-}
-
 pub fn convert_responses_to_chat_with_provider(
     body: &axum::body::Bytes,
     provider: Option<&ProviderConfig>,
@@ -762,6 +758,7 @@ fn update_last_assistant_index(
 }
 
 #[derive(Debug, Clone, Copy)]
+#[derive(Default)]
 pub struct RepairMessagesOptions {
     /// 为 assistant tool_calls 补 `reasoning_content` 占位；仅 thinking 模型需要。
     pub preserve_reasoning_content: bool,
@@ -769,14 +766,6 @@ pub struct RepairMessagesOptions {
     pub tool_output_max_chars: usize,
 }
 
-impl Default for RepairMessagesOptions {
-    fn default() -> Self {
-        Self {
-            preserve_reasoning_content: false,
-            tool_output_max_chars: 0,
-        }
-    }
-}
 
 pub fn repair_options_for_provider(
     provider: Option<&ProviderConfig>,
@@ -1267,7 +1256,7 @@ fn extract_text_from_content_item(item: &Value) -> Option<String> {
         return Some(text.to_string());
     }
     item.as_object()
-        .and_then(|obj| extract_text_from_content_part(obj))
+        .and_then(extract_text_from_content_part)
 }
 
 fn unsupported_attachment_part_to_text(part: &Value, item_type: &str) -> Option<String> {
@@ -1355,7 +1344,12 @@ mod tests {
     }
 
     fn parse_chat(body: &'static [u8]) -> Value {
-        let converted = convert_responses_to_chat(&axum::body::Bytes::from_static(body)).unwrap();
+        let converted = convert_responses_to_chat_with_provider(
+            &axum::body::Bytes::from_static(body),
+            None,
+            0,
+        )
+        .unwrap();
         serde_json::from_slice(&converted.body).unwrap()
     }
 
