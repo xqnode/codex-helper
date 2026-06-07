@@ -1,6 +1,6 @@
 # Codex Helper
 
-> 轻量托盘 / 菜单栏工具 — 让 **OpenAI Codex CLI** 一键切换到 DeepSeek、通义千问、智谱、Kimi、MiniMax 等国产大模型。
+> **Windows / macOS** 轻量托盘 / 菜单栏工具 — 让 **Codex Desktop** 一键切换到 DeepSeek、通义千问、智谱、Kimi、MiniMax 等国产大模型。
 
 > **零门槛设计**：双击安装 → 自动配置 → 托盘右键选模型 → 开始用 Codex。
 > 全程不需要打开终端、不需要改配置文件、不需要懂技术。
