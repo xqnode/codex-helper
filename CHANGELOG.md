@@ -7,6 +7,16 @@
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-06-06
+
+### 修复
+
+- **macOS 启动崩溃**：修复从终端或 `.app` 启动时 `Cannot start a runtime from within a runtime` panic，导致代理与菜单栏图标无法出现（`tray.rs` 嵌套 `block_on`）
+
+### 变更
+
+- 托盘「更多」改为二级子菜单，主菜单更简洁
+
 ## [0.2.3] - 2026-06-06
 
 ### 修复

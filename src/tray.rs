@@ -81,6 +81,7 @@ pub async fn run_with_proxy(app: AppConfig) -> anyhow::Result<()> {
     let ctx = Arc::new(TrayContext {
         config,
         proxy,
+        proxy_port: app.proxy.port,
         tray: tray_slot.clone(),
         loop_proxy: loop_proxy.clone(),
         rt: rt_handle,
@@ -152,9 +153,7 @@ pub async fn run_with_proxy(app: AppConfig) -> anyhow::Result<()> {
                         settings::focus_settings_window(&slot);
                         return;
                     }
-                    let port = ctx_for_loop.rt.block_on(async {
-                        ctx_for_loop.config.read().await.proxy.port
-                    });
+                    let port = ctx_for_loop.proxy_port;
                     match settings::open_settings_on_loop(elwt, port) {
                         Ok(window) => *slot = Some(window),
                         Err(err) if err.to_string().contains("already open") => {
@@ -169,9 +168,7 @@ pub async fn run_with_proxy(app: AppConfig) -> anyhow::Result<()> {
                         logs::focus_logs_window(&slot);
                         return;
                     }
-                    let port = ctx_for_loop.rt.block_on(async {
-                        ctx_for_loop.config.read().await.proxy.port
-                    });
+                    let port = ctx_for_loop.proxy_port;
                     match logs::open_logs_on_loop(elwt, port) {
                         Ok(window) => *slot = Some(window),
                         Err(err) if err.to_string().contains("already open") => {
@@ -200,11 +197,7 @@ pub async fn run_with_proxy(app: AppConfig) -> anyhow::Result<()> {
         });
     };
 
-    // macOS：必须在 OS 主线程跑 tao 事件循环；Windows 用 block_in_place 避免阻塞 Tokio worker。
-    #[cfg(target_os = "macos")]
-    run_event_loop();
-
-    #[cfg(not(target_os = "macos"))]
+    // 主线程在 block_on 里跑 tao 事件循环；须 block_in_place，否则嵌套 block_on 会 panic（macOS 终端启动常见）。
     tokio::task::block_in_place(run_event_loop);
 
     Ok(())
@@ -224,6 +217,7 @@ fn wake_main_run_loop() {}
 struct TrayContext {
     config: Arc<RwLock<AppConfig>>,
     proxy: Arc<ProxyState>,
+    proxy_port: u16,
     tray: Rc<RefCell<Option<TrayIcon>>>,
     loop_proxy: EventLoopProxy<TrayUserEvent>,
     rt: tokio::runtime::Handle,
@@ -237,13 +231,17 @@ struct TrayWorker {
     proxy: Arc<ProxyState>,
 }
 
+fn tray_block_on<F: std::future::Future>(handle: &tokio::runtime::Handle, future: F) -> F::Output {
+    tokio::task::block_in_place(|| handle.block_on(future))
+}
+
 fn handle_menu_click(
     ctx: &Arc<TrayContext>,
     id: &str,
     control_flow: &mut ControlFlow,
 ) {
     if id == "quit" {
-        ctx.rt.block_on(async {
+        tray_block_on(&ctx.rt, async {
             proxy::shutdown(&ctx.proxy).await;
         });
         *ctx.tray.borrow_mut() = None;
@@ -346,20 +344,17 @@ where
 }
 
 fn start_health_check(ctx: &Arc<TrayContext>) {
-    let provider_id = ctx.rt.block_on(async {
-        ctx.config.read().await.active.clone()
-    });
-    ctx.rt.block_on(async {
-        let mut health = ctx.health.write().await;
-        health.provider_id = provider_id;
-        health.connection = ConnectionStatus::Checking;
-    });
-    refresh_tray_ui(ctx);
-
     let config = ctx.config.clone();
     let health = ctx.health.clone();
     let loop_proxy = ctx.loop_proxy.clone();
     ctx.rt.spawn(async move {
+        let provider_id = config.read().await.active.clone();
+        {
+            let mut state = health.write().await;
+            state.provider_id = provider_id;
+            state.connection = ConnectionStatus::Checking;
+        }
+        let _ = loop_proxy.send_event(TrayUserEvent::RefreshUi);
         run_health_check(config, health).await;
         let _ = loop_proxy.send_event(TrayUserEvent::RefreshUi);
     });
@@ -432,8 +427,8 @@ async fn store_health(
 }
 
 fn refresh_tray_ui(ctx: &Arc<TrayContext>) {
-    let app = ctx.rt.block_on(async { ctx.config.read().await.clone() });
-    let health = ctx.rt.block_on(async { ctx.health.read().await.clone() });
+    let app = tray_block_on(&ctx.rt, async { ctx.config.read().await.clone() });
+    let health = tray_block_on(&ctx.rt, async { ctx.health.read().await.clone() });
     let tray_ref = ctx.tray.borrow();
     let Some(tray) = tray_ref.as_ref() else {
         return;
@@ -591,31 +586,32 @@ fn build_menu(app: &AppConfig, health: &ProviderHealth) -> anyhow::Result<Menu> 
     ))?;
 
     menu.append(&PredefinedMenuItem::separator())?;
-    menu.append(&MenuItem::with_id("hdr_more", "更多", false, None))?;
-    menu.append(&MenuItem::with_id(
+    let more_menu = Submenu::with_id("more", "更多", true);
+    more_menu.append(&MenuItem::with_id(
         "open_helper",
         "打开配置文件夹",
         true,
         None,
     ))?;
-    menu.append(&MenuItem::with_id(
+    more_menu.append(&MenuItem::with_id(
         "open_codex",
         "打开 Codex 文件夹",
         true,
         None,
     ))?;
-    menu.append(&MenuItem::with_id(
+    more_menu.append(&MenuItem::with_id(
         "restore_openai",
         "切换回 OpenAI 官方",
         true,
         None,
     ))?;
-    menu.append(&MenuItem::with_id(
+    more_menu.append(&MenuItem::with_id(
         "kill_reset_codex",
         "重置 Codex 为默认设置",
         true,
         None,
     ))?;
+    menu.append(&more_menu)?;
 
     menu.append(&PredefinedMenuItem::separator())?;
     menu.append(&MenuItem::with_id("quit", "退出 Codex Helper", true, None))?;
