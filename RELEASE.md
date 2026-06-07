@@ -6,7 +6,42 @@
 
 ---
 
-## Agent / 维护者：Windows 一键发版（推荐）
+## 推荐：GitHub Actions 自动发版（Windows + macOS）
+
+推送 **`v*`** 标签后，[`.github/workflows/release.yml`](.github/workflows/release.yml) 会自动：
+
+| Runner | 产物 |
+|--------|------|
+| `windows-latest` | `CodexHelper-{version}-win64.zip`、`CodexHelper-{version}-Setup.exe` |
+| `macos-latest` | `CodexHelper-{version}-macos.dmg`（Universal arm64 + x86_64） |
+
+Release 说明从 `CHANGELOG.md` 对应版本段落自动提取。
+
+### 发版步骤（Actions）
+
+```powershell
+# 1. 本地改版本与 CHANGELOG，commit 并 push main
+#    Cargo.toml / CHANGELOG.md / installer 版本号
+
+git push origin main
+
+# 2. 打 tag 并推送 —— 触发 CI
+git tag v0.2.3
+git push origin v0.2.3
+```
+
+在 GitHub → **Actions** → **Release** 查看进度；完成后 Release 页会自动出现全部产物。
+
+> **注意**：Actions 发版**不需要**本地构建，也**不需要** `dist/RELEASE_NOTES_*.md`（说明取自 CHANGELOG）。  
+> macOS DMG 为 ad-hoc 签名，**未公证**；Gatekeeper 可能拦截，用户需右键打开或 `xattr -cr`（见 README）。
+
+### 本地发版（备用）
+
+仍可用 `scripts/release-windows.ps1` 在本机 Windows 构建并上传（仅 zip + Setup，不含 DMG）。
+
+---
+
+## Agent / 维护者：Windows 本地一键发版（备用）
 
 > 给 Cursor Agent 或维护者用的**固定流程**。按顺序执行即可，无需猜 `gh` 在哪。
 
@@ -194,14 +229,18 @@ Inno Setup 构建后单独上传：
 
 ---
 
-## macOS 发版（简述）
+## macOS 发版
 
-在 Mac 上执行：
+**推荐**：推送 `v*` 标签，由 GitHub Actions 在 `macos-latest` 上构建 Universal DMG 并上传到 Release（见上文「GitHub Actions 自动发版」）。
+
+本地调试构建：
 
 ```bash
 ./scripts/build-macos-release.sh
-# 产物在 dist/，手动 gh release upload
+# 产物在 dist/；NATIVE_ONLY=1 可跳过 Universal 双架构编译
 ```
+
+`main` 分支 push 也会触发 [build-macos-dmg.yml](.github/workflows/build-macos-dmg.yml) 做 CI 验证（仅上传 Artifact，不创建 Release）。
 
 ---
 
