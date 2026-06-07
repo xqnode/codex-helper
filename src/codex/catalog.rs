@@ -101,7 +101,7 @@ fn ensure_required_v26_fields(model: &mut serde_json::Value) {
     let Some(obj) = model.as_object_mut() else {
         return;
     };
-    let defaults: [(&str, serde_json::Value); 7] = [
+    let defaults: [(&str, serde_json::Value); 8] = [
         ("availability_nux", serde_json::Value::Null),
         ("upgrade", serde_json::Value::Null),
         (
@@ -118,6 +118,7 @@ fn ensure_required_v26_fields(model: &mut serde_json::Value) {
             "experimental_supported_tools",
             serde_json::Value::Array(vec![]),
         ),
+        ("supported_reasoning_levels", serde_json::json!([])),
     ];
     for (key, value) in defaults {
         if !obj.contains_key(key) {
@@ -262,7 +263,8 @@ fn apply_reasoning_catalog_fields(
         obj.insert("supported_reasoning_levels".into(), levels);
     } else {
         obj.remove("default_reasoning_level");
-        obj.remove("supported_reasoning_levels");
+        // Codex v26+ 反序列化要求该字段存在；无分档厂商用空数组。
+        obj.insert("supported_reasoning_levels".into(), serde_json::json!([]));
     }
 }
 
@@ -285,8 +287,18 @@ mod tests {
         app.active = "kimi".into();
         let kimi = build_merged_catalog(&app).unwrap();
         let kimi_model = &kimi["models"].as_array().unwrap()[0];
-        assert!(kimi_model.get("supported_reasoning_levels").is_none());
+        assert_eq!(kimi_model["supported_reasoning_levels"], serde_json::json!([]));
         assert!(kimi_model.get("default_reasoning_level").is_none());
+
+        app.active = "qwen".into();
+        let qwen = build_merged_catalog(&app).unwrap();
+        for model in qwen["models"].as_array().unwrap() {
+            assert!(
+                model.get("supported_reasoning_levels").is_some(),
+                "missing supported_reasoning_levels for {}",
+                model["slug"]
+            );
+        }
     }
 
     #[test]
