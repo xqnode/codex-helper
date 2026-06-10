@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-06-10
+
+### 新增
+
+- **中转站上游 Responses 透传**：自定义中转站可切换「上游协议」为 Responses API，代理将 Codex `/v1/responses` 原样转发到上游 `/responses`（适用于仅支持 Responses 的模型，如 `gpt-5.5-r`）
+- 设置页中转站新增「上游协议」选项；测试连接按协议分别请求 `/chat/completions` 或 `/responses`，并在模型不支持 chat 时提示切换透传
+
 ## [0.2.4] - 2026-06-06
 
 ### 修复

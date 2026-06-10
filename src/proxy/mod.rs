@@ -287,6 +287,18 @@ async fn proxy_responses(
                 .into_response();
         }
     };
+    if provider.uses_upstream_responses_api() {
+        let patched = patch_upstream_model(&body, &provider);
+        return forward_request(
+            &state,
+            "/responses",
+            Method::POST,
+            headers,
+            patched.into(),
+            true,
+        )
+        .await;
+    }
     let tool_output_max_chars = state.config.read().await.tool_output_max_chars;
     match convert_responses_to_chat_with_provider(&body, Some(&provider), tool_output_max_chars) {
         Ok(converted) => forward_responses_request(&state, headers, converted).await,

@@ -529,6 +529,14 @@
         <textarea id="customModelsInput" class="text-input" rows="4" spellcheck="false" placeholder="每行一个模型，例如：&#10;gpt-5.5&#10;gpt-4o|gpt-4o-2024-08-06&#10;展示名|slug|上游模型名"></textarea>
         <p class="field-foot" id="customModelsHint">保存后写入本地配置，托盘与 Codex 模型列表同步更新</p>
       </div>
+      <div class="field hidden" id="upstreamWireApiField">
+        <label class="field-label" for="upstreamWireApiSelect">上游协议</label>
+        <select id="upstreamWireApiSelect" class="text-input" aria-label="上游协议">
+          <option value="chat">Chat Completions（默认）</option>
+          <option value="responses">Responses API（透传）</option>
+        </select>
+        <p class="field-foot" id="upstreamWireApiHint">仅支持 Responses 的上游（如 gpt-5.5-r）请选择透传</p>
+      </div>
       <div class="field hidden" id="reasoningEffortField">
         <label class="field-label" for="reasoningEffortSelect">推理档位</label>
         <select id="reasoningEffortSelect" class="text-input" aria-label="推理档位"></select>
@@ -620,6 +628,7 @@
       };
       if (isCustom()) {
         payload.custom_models_text = document.getElementById('customModelsInput').value;
+        payload.upstream_wire_api = document.getElementById('upstreamWireApiSelect').value;
       }
       return payload;
     }
@@ -718,6 +727,7 @@
       renderProviderGrid();
       refreshBaseUrlField();
       refreshCustomModelsField();
+      refreshUpstreamWireApiField();
       refreshReasoningField();
       refreshKeyField();
       updateSignupLink();
@@ -752,6 +762,19 @@
         return;
       }
       input.value = p?.custom_models_text || '';
+    }
+
+    function refreshUpstreamWireApiField() {
+      const field = document.getElementById('upstreamWireApiField');
+      const select = document.getElementById('upstreamWireApiSelect');
+      const p = selected();
+      const custom = isCustom();
+      field.classList.toggle('hidden', !custom);
+      if (!custom) {
+        select.value = 'chat';
+        return;
+      }
+      select.value = p?.upstream_wire_api === 'responses' ? 'responses' : 'chat';
     }
 
     function updateSignupLink() {
@@ -806,6 +829,7 @@
       updateKeyBadge(!!selected()?.key_configured);
       refreshBaseUrlField();
       refreshCustomModelsField();
+      refreshUpstreamWireApiField();
       refreshReasoningField();
       refreshKeyField();
     }
@@ -816,6 +840,8 @@
     });
 
     document.getElementById('customModelsInput').addEventListener('input', () => hideStatus());
+
+    document.getElementById('upstreamWireApiSelect').addEventListener('change', () => hideStatus());
 
     document.getElementById('reasoningEffortSelect').addEventListener('change', () => hideStatus());
 
@@ -937,6 +963,7 @@
           p.base_url_customized = !!p.base_url;
           if (isCustom()) {
             p.custom_models_text = document.getElementById('customModelsInput').value;
+            p.upstream_wire_api = document.getElementById('upstreamWireApiSelect').value;
           }
           if (key) {
             p.key_configured = true;

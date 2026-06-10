@@ -268,7 +268,8 @@ fn render_codex_config(app: &AppConfig, provider: &config::ProviderConfig) -> an
         toml::Value::String(bearer.clone()),
     );
     // Newer Codex Desktop rejects `wire_api = "chat"` and requires Responses.
-    // The local proxy translates /responses to the upstream chat/completions API.
+    // The local proxy either translates /responses to upstream chat/completions,
+    // or passthroughs to upstream /responses when upstream_wire_api = "responses".
     provider_table.insert("wire_api".into(), toml::Value::String("responses".into()));
     // Desktop 在 requires_openai_auth=false 时会隐藏模型选择器
     provider_table.insert(

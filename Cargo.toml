@@ -1,6 +1,6 @@
 [package]
 name = "codex-helper"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 description = "Windows / macOS 轻量托盘·菜单栏代理，让 Codex Desktop 一键切换 DeepSeek、千问、智谱、Kimi 等国产大模型"
 license = "LicenseRef-NonCommercial-1.0"

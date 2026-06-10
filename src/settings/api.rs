@@ -74,6 +74,7 @@ pub async fn settings_bootstrap() -> impl IntoResponse {
             } else {
                 String::new()
             },
+            "upstream_wire_api": preset.upstream_wire_api,
             "supports_reasoning_effort_levels": supports_reasoning_effort,
             "supported_reasoning_levels": supported_reasoning_levels_for_catalog(preset),
         }));
@@ -98,6 +99,8 @@ pub struct SettingsSaveBody {
     model_reasoning_effort: String,
     #[serde(default)]
     custom_models_text: String,
+    #[serde(default)]
+    upstream_wire_api: String,
 }
 
 pub async fn settings_save(
@@ -111,6 +114,7 @@ pub async fn settings_save(
         body.base_url.trim(),
         body.model_reasoning_effort.trim(),
         body.custom_models_text.as_str(),
+        body.upstream_wire_api.as_str(),
     )
     .await
     {
@@ -136,6 +140,8 @@ pub struct SettingsTestBody {
     base_url: String,
     #[serde(default)]
     custom_models_text: String,
+    #[serde(default)]
+    upstream_wire_api: String,
 }
 
 pub async fn settings_test(Json(body): Json<SettingsTestBody>) -> impl IntoResponse {
@@ -176,6 +182,7 @@ pub async fn settings_test(Json(body): Json<SettingsTestBody>) -> impl IntoRespo
         }))
         .into_response();
     }
+    apply_upstream_wire_api(&mut provider, body.upstream_wire_api.as_str());
 
     let api_key = match resolve_key_for_request(&provider, body.api_key.trim()) {
         Ok(key) => key,
@@ -235,6 +242,7 @@ async fn save_api_key(
     base_url: &str,
     model_reasoning_effort: &str,
     custom_models_text: &str,
+    upstream_wire_api: &str,
 ) -> anyhow::Result<String> {
     let mut app = AppConfig::load()?;
     provider::get_preset(&app, provider_id)?;
@@ -245,6 +253,7 @@ async fn save_api_key(
 
     apply_provider_base_url(provider_cfg, base_url)?;
     apply_custom_models_from_text(provider_cfg, custom_models_text)?;
+    apply_upstream_wire_api(provider_cfg, upstream_wire_api);
 
     let provider = provider_cfg.clone();
     if provider_supports_reasoning_effort_levels(&provider)
@@ -329,6 +338,16 @@ fn apply_custom_models_from_text(
     Ok(())
 }
 
+fn apply_upstream_wire_api(provider: &mut ProviderConfig, upstream_wire_api: &str) {
+    if provider.id != "custom" {
+        return;
+    }
+    if upstream_wire_api.trim().is_empty() {
+        return;
+    }
+    provider.upstream_wire_api = config::normalize_upstream_wire_api(upstream_wire_api);
+}
+
 fn resolve_key_for_request(
     provider: &ProviderConfig,
     api_key: &str,
@@ -351,17 +370,27 @@ pub async fn test_api_key(provider: &ProviderConfig, api_key: &str) -> anyhow::R
     }
 
     let client = config::build_upstream_client(std::time::Duration::from_secs(30))?;
+    let base = provider.base_url.trim_end_matches('/');
 
-    let url = format!(
-        "{}/chat/completions",
-        provider.base_url.trim_end_matches('/')
-    );
-
-    let body = serde_json::json!({
-        "model": provider.upstream_model(),
-        "messages": [{"role": "user", "content": "ping"}],
-        "max_tokens": 8
-    });
+    let (url, body) = if provider.uses_upstream_responses_api() {
+        (
+            format!("{base}/responses"),
+            serde_json::json!({
+                "model": provider.upstream_model(),
+                "input": "ping",
+                "max_output_tokens": 8
+            }),
+        )
+    } else {
+        (
+            format!("{base}/chat/completions"),
+            serde_json::json!({
+                "model": provider.upstream_model(),
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 8
+            }),
+        )
+    };
 
     let resp = client
         .post(url)
@@ -376,5 +405,12 @@ pub async fn test_api_key(provider: &ProviderConfig, api_key: &str) -> anyhow::R
 
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
+    if !provider.uses_upstream_responses_api()
+        && text.contains("does not support endpoint: chat/completions")
+    {
+        anyhow::bail!(
+            "连接失败 ({status})：{text}。该模型可能仅支持 Responses API，请将「上游协议」切换为 Responses API（透传）后重试"
+        );
+    }
     anyhow::bail!("连接失败 ({status})：{text}")
 }

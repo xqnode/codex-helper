@@ -21,6 +21,10 @@ pub const DEFAULT_UPSTREAM_CONNECT_TIMEOUT_SECS: u64 = 30;
 pub const DEFAULT_UPSTREAM_STREAM_READ_IDLE_TIMEOUT_SECS: u64 = 300;
 /// 非流式请求总超时（秒）；仅用于一次性等待完整响应。
 pub const DEFAULT_UPSTREAM_REQUEST_TIMEOUT_SECS: u64 = 600;
+/// 代理将 Codex Responses 请求转换为上游 Chat Completions。
+pub const UPSTREAM_WIRE_API_CHAT: &str = "chat";
+/// 代理将 Codex Responses 请求原样透传到上游 /responses。
+pub const UPSTREAM_WIRE_API_RESPONSES: &str = "responses";
 
 const VALID_MODEL_REASONING_EFFORTS: &[&str] =
     &["none", "minimal", "low", "medium", "high", "xhigh"];
@@ -52,6 +56,9 @@ pub struct ProviderConfig {
     #[serde(default)]
     pub api_model: String,
     pub wire_api: String,
+    /// 代理访问上游时使用的 API：`chat`（默认）或 `responses`（透传）。
+    #[serde(default = "default_upstream_wire_api")]
+    pub upstream_wire_api: String,
     /// 用户是否在设置页改过 Base URL（为 true 时 sync 不再覆盖为官方默认）。
     #[serde(default)]
     pub base_url_customized: bool,
@@ -77,6 +84,17 @@ fn default_custom_model_context_window() -> u32 {
     128_000
 }
 
+fn default_upstream_wire_api() -> String {
+    UPSTREAM_WIRE_API_CHAT.to_string()
+}
+
+pub fn normalize_upstream_wire_api(value: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        UPSTREAM_WIRE_API_RESPONSES | "response" => UPSTREAM_WIRE_API_RESPONSES.to_string(),
+        _ => UPSTREAM_WIRE_API_CHAT.to_string(),
+    }
+}
+
 impl ProviderConfig {
     pub fn new(
         id: impl Into<String>,
@@ -95,9 +113,14 @@ impl ProviderConfig {
             default_model: default_model.into(),
             api_model: api_model.into(),
             wire_api: wire_api.into(),
+            upstream_wire_api: default_upstream_wire_api(),
             base_url_customized: false,
             custom_models: Vec::new(),
         }
+    }
+
+    pub fn uses_upstream_responses_api(&self) -> bool {
+        self.upstream_wire_api == UPSTREAM_WIRE_API_RESPONSES
     }
 
     pub fn catalog_model(&self) -> &str {
@@ -421,5 +444,31 @@ mod tests {
         assert!(validate_proxy_bind_host("::1").is_ok());
         assert!(validate_proxy_bind_host("0.0.0.0").is_err());
         assert!(validate_proxy_bind_host("192.168.1.1").is_err());
+    }
+
+    #[test]
+    fn default_upstream_wire_api_is_chat() {
+        let provider = ProviderConfig::new(
+            "custom",
+            "中转站",
+            "https://example.com/v1",
+            "CUSTOM_API_KEY",
+            "gpt-5.5",
+            "gpt-5.5",
+            "responses",
+        );
+        assert_eq!(provider.upstream_wire_api, UPSTREAM_WIRE_API_CHAT);
+        assert!(!provider.uses_upstream_responses_api());
+    }
+
+    #[test]
+    fn normalize_upstream_wire_api_accepts_responses_aliases() {
+        assert_eq!(
+            normalize_upstream_wire_api("responses"),
+            UPSTREAM_WIRE_API_RESPONSES
+        );
+        assert_eq!(normalize_upstream_wire_api("RESPONSE"), UPSTREAM_WIRE_API_RESPONSES);
+        assert_eq!(normalize_upstream_wire_api("chat"), UPSTREAM_WIRE_API_CHAT);
+        assert_eq!(normalize_upstream_wire_api(""), UPSTREAM_WIRE_API_CHAT);
     }
 }

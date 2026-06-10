@@ -46,6 +46,9 @@ pub fn sync_builtin_presets(app: &mut crate::config::AppConfig) {
             existing.api_key_env = preset.api_key_env.clone();
             existing.name = preset.name.clone();
             existing.wire_api = preset.wire_api.clone();
+            if existing.id != "custom" {
+                existing.upstream_wire_api = preset.upstream_wire_api.clone();
+            }
             models::sync_model_metadata(existing);
         } else {
             app.providers.insert(preset.id.clone(), preset);
@@ -108,5 +111,30 @@ mod tests {
         assert!(app.providers.contains_key("minimax"));
         assert!(app.providers.contains_key("kimi"));
         assert_eq!(app.providers.get("qwen").unwrap().name, "千问");
+    }
+
+    #[test]
+    fn sync_preserves_custom_upstream_wire_api() {
+        let mut app = AppConfig::default();
+        app.providers
+            .get_mut("custom")
+            .unwrap()
+            .upstream_wire_api = crate::config::UPSTREAM_WIRE_API_RESPONSES.to_string();
+        sync_builtin_presets(&mut app);
+        assert!(app.providers.get("custom").unwrap().uses_upstream_responses_api());
+    }
+
+    #[test]
+    fn sync_resets_official_upstream_wire_api_to_chat() {
+        let mut app = AppConfig::default();
+        app.providers
+            .get_mut("deepseek")
+            .unwrap()
+            .upstream_wire_api = crate::config::UPSTREAM_WIRE_API_RESPONSES.to_string();
+        sync_builtin_presets(&mut app);
+        assert_eq!(
+            app.providers.get("deepseek").unwrap().upstream_wire_api,
+            crate::config::UPSTREAM_WIRE_API_CHAT
+        );
     }
 }
